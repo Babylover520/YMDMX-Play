@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#173F37">
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <meta name="description" content="为伊敏定制的轻松大富翁陪玩游戏">
+  <title>伊敏大冒险</title>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css?v=38">
+  <link rel="stylesheet" href="styles-redesign.css?v=38">
+</head>
+<body>
+  <a class="skip-link" href="#roll-button">跳到掷骰子</a>
+
+  <main id="app" class="app-shell">
+    <section id="game-screen" class="game-screen" aria-labelledby="game-title">
+      <header class="game-toolbar">
+        <div class="brand-lockup">
+          <span class="brand-mark" aria-hidden="true">YM</span>
+          <div>
+            <p class="brand-kicker">PRIVATE TABLE TRIP</p>
+            <h1 id="game-title">伊敏大冒险</h1>
+          </div>
+        </div>
+
+        <div class="turn-strip" aria-live="polite">
+          <span class="turn-dot" aria-hidden="true"></span>
+          <span id="round-number">第 1 轮 · 4 人在场</span>
+          <span class="turn-divider" aria-hidden="true"></span>
+          <strong id="turn-player-name">伊敏</strong>
+          <span>的回合</span>
+        </div>
+
+        <div class="toolbar-actions" aria-label="游戏设置">
+          <label class="speed-control" for="speed-toggle">
+            <span>快速动画</span>
+            <input id="speed-toggle" type="checkbox" role="switch">
+            <span class="switch-track" aria-hidden="true"><span></span></span>
+          </label>
+          <button id="restart-button" class="icon-button" type="button" title="重新开始" aria-label="重新开始">
+            <span aria-hidden="true">↻</span>
+          </button>
+          <button id="sound-toggle" class="icon-button" type="button" title="关闭声音" aria-label="关闭声音" aria-pressed="false">
+            <span aria-hidden="true">♪</span>
+          </button>
+        </div>
+      </header>
+
+      <div class="game-workspace">
+        <section class="player-rail" aria-labelledby="players-heading">
+          <div class="rail-heading">
+            <div>
+              <p class="section-kicker">TRAVEL PARTY</p>
+              <h2 id="players-heading">同行伙伴</h2>
+            </div>
+            <span id="active-player-count" class="compact-count" aria-label="四名玩家">4</span>
+          </div>
+
+          <ol id="player-list" class="player-list" aria-live="polite" aria-label="玩家列表">
+            <li class="player-placeholder">正在召集伙伴…</li>
+          </ol>
+
+          <div class="rail-note">
+            <p id="companion-note">陪伴模式已开启，朋友们会在关键时刻照顾伊敏。</p>
+          </div>
+        </section>
+
+        <section class="board-stage" aria-label="游戏棋盘区">
+          <div id="board" class="board" role="grid" aria-label="32 格伊敏大冒险棋盘">
+            <div id="board-tiles" class="board-tiles"></div>
+
+            <section class="play-island" aria-labelledby="island-title">
+              <div class="island-copy">
+                <p id="turn-status" class="turn-status">准备好出发了吗？</p>
+                <h2 id="island-title">伊敏的回合</h2>
+                <p id="game-hint" class="game-hint">掷骰子，看看下一站会遇见什么。</p>
+              </div>
+
+              <div class="dice-zone">
+                <div id="dice" class="dice" aria-label="骰子点数 1" data-value="1">
+                  <span id="dice-value" class="dice-value" aria-hidden="true">1</span>
+                </div>
+                <button id="roll-button" class="primary-action" type="button">
+                  <span class="button-die" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+                  <span>掷骰子</span>
+                </button>
+              </div>
+
+              <div class="island-stats" aria-label="伊敏的即时状态">
+                <div>
+                  <span>快乐币</span>
+                  <strong id="current-cash">2,000</strong>
+                </div>
+                <div>
+                  <span>总资产</span>
+                  <strong id="current-net-worth">2,000</strong>
+                </div>
+                <div>
+                  <span>手牌</span>
+                  <strong id="current-card-count">0 / 5</strong>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <p id="board-announcement" class="board-announcement" aria-live="assertive"></p>
+        </section>
+
+        <aside id="side-panel" class="side-panel" aria-labelledby="side-panel-title">
+          <button id="panel-toggle" class="panel-handle" type="button" aria-expanded="false" aria-controls="side-panel-body">
+            <span aria-hidden="true"></span>
+            <span class="visually-hidden">展开游戏信息</span>
+          </button>
+
+          <div class="side-panel-heading">
+            <div>
+              <p class="section-kicker">TRIP NOTES</p>
+              <h2 id="side-panel-title">行程手账</h2>
+            </div>
+            <span id="log-count" class="compact-count" aria-label="零条新记录">0</span>
+          </div>
+
+          <div class="panel-tabs" role="tablist" aria-label="游戏信息">
+            <button id="tab-events" class="panel-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="event-log">动态</button>
+            <button id="tab-cards" class="panel-tab" type="button" role="tab" aria-selected="false" aria-controls="card-panel">卡牌</button>
+            <button id="tab-assets" class="panel-tab" type="button" role="tab" aria-selected="false" aria-controls="asset-panel">资产</button>
+          </div>
+
+          <div id="side-panel-body" class="side-panel-body">
+            <section id="event-log" class="tab-panel is-active" role="tabpanel" aria-labelledby="tab-events">
+              <ol id="event-log-list" class="event-log-list" aria-live="polite">
+                <li class="empty-state">
+                  <span aria-hidden="true">◎</span>
+                  <p>第一条冒险动态会出现在这里。</p>
+                </li>
+              </ol>
+            </section>
+
+            <section id="card-panel" class="tab-panel" role="tabpanel" aria-labelledby="tab-cards" hidden>
+              <div class="panel-summary">
+                <span>伊敏的手牌</span>
+                <strong id="hand-count">0 / 5</strong>
+              </div>
+              <div id="card-list" class="card-list">
+                <p class="empty-copy">抽到的卡牌会放在这里。</p>
+              </div>
+            </section>
+
+            <section id="asset-panel" class="tab-panel" role="tabpanel" aria-labelledby="tab-assets" hidden>
+              <dl class="asset-summary">
+                <div><dt>现金</dt><dd id="asset-cash">2,000</dd></div>
+                <div><dt>银行存款</dt><dd id="asset-deposit">0</dd></div>
+                <div><dt>地产估值</dt><dd id="asset-properties-value">0</dd></div>
+                <div><dt>待还贷款</dt><dd id="asset-debt">0</dd></div>
+              </dl>
+              <div class="property-heading">
+                <h3>我的经营项目</h3>
+                <span id="property-count">0 处</span>
+              </div>
+              <div id="property-list" class="property-list">
+                <p class="empty-copy">买下第一处地产后，会在这里看到它。</p>
+              </div>
+            </section>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section id="start-screen" class="start-screen" role="dialog" aria-modal="true" aria-labelledby="start-title">
+      <div class="start-dialog">
+        <div class="start-stamp" aria-hidden="true">YM · 01</div>
+        <p class="start-kicker">FOR YIMIN ONLY · 私人旅行棋局</p>
+        <h2 id="start-title">伊敏大冒险</h2>
+        <p class="start-description">带上三位性格不同的 AI 旅伴，沿着生活地图经营小店，收集只属于这一局的惊喜。</p>
+
+        <fieldset class="setup-group">
+          <legend>AI 难度</legend>
+          <div class="segmented-control">
+            <label><input type="radio" name="difficulty" value="easy"><span>轻松</span></label>
+            <label><input type="radio" name="difficulty" value="normal" checked><span>普通</span></label>
+            <label><input type="radio" name="difficulty" value="hard"><span>聪明</span></label>
+          </div>
+        </fieldset>
+
+        <label class="care-option" for="care-mode-toggle">
+          <span class="care-copy">
+            <strong>伊敏特别关照</strong>
+            <small>AI 会在最需要时送上一点帮助</small>
+          </span>
+          <input id="care-mode-toggle" type="checkbox" role="switch" checked>
+          <span class="switch-track" aria-hidden="true"><span></span></span>
+        </label>
+
+        <div class="start-actions">
+          <button id="new-game-button" class="start-primary" type="button">开始新游戏</button>
+          <button id="continue-game-button" class="start-secondary" type="button" disabled>继续上次冒险</button>
+        </div>
+
+        <button id="history-button" class="history-button" type="button">
+          <span>历史战绩</span>
+          <small id="history-count">尚无记录</small>
+        </button>
+
+        <p class="save-note"><span aria-hidden="true">✓</span> 每个回合结束后自动保存</p>
+      </div>
+    </section>
+  </main>
+
+  <div id="modal-layer" class="modal-layer" hidden>
+    <section id="game-modal" class="game-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" aria-describedby="modal-body" tabindex="-1">
+      <button id="modal-close" class="modal-close" type="button" aria-label="关闭弹窗">×</button>
+      <div id="modal-icon" class="modal-icon" aria-hidden="true">!</div>
+      <p id="modal-kicker" class="modal-kicker">新的事件</p>
+      <h2 id="modal-title">发生了什么？</h2>
+      <div id="modal-body" class="modal-body"></div>
+      <div id="bank-action-container" class="context-action-container" hidden></div>
+      <div id="property-action-container" class="context-action-container" hidden></div>
+      <div id="modal-actions" class="modal-actions"></div>
+    </section>
+  </div>
+
+  <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
+  <div id="screen-reader-status" class="visually-hidden" role="status" aria-live="polite"></div>
+
+  <template id="player-card-template">
+    <li class="player-card">
+      <span class="player-avatar" aria-hidden="true"></span>
+      <div class="player-card-main">
+        <div class="player-name-row">
+          <strong class="player-name"></strong>
+          <span class="player-personality"></span>
+        </div>
+        <span class="player-cash"></span>
+        <div class="player-progress" aria-hidden="true"><span></span></div>
+      </div>
+      <span class="player-status"></span>
+    </li>
+  </template>
+
+  <script src="src/game-data.js?v=38"></script>
+  <script src="src/game-engine.js?v=38"></script>
+  <script src="src/app.js?v=38"></script>
+</body>
+</html>
