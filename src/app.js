@@ -20,6 +20,16 @@
 
   function byId(id) { return document.getElementById(id); }
   function money(value) { return Math.max(0, Number(value) || 0).toLocaleString("zh-CN"); }
+  function compactMoney(value) {
+    var amount = Math.max(0, Number(value) || 0);
+    if (amount >= 100000) {
+      return Math.round(amount / 10000).toLocaleString("zh-CN") + "万币";
+    }
+    if (amount >= 10000) {
+      return (Math.round(amount / 1000) / 10).toLocaleString("zh-CN", { maximumFractionDigits: 1 }) + "万币";
+    }
+    return money(amount) + "币";
+  }
   function wait(ms) { return new Promise(function (resolve) { window.setTimeout(resolve, ms); }); }
   function getPlayer(state, id) { return state.players.find(function (player) { return player.id === id; }); }
   function currentPlayer(state) { return state.players[state.currentPlayerIndex]; }
@@ -44,9 +54,9 @@
   }
   function lifePressureLabel(round, activePlayerCount) {
     var startRound = Number(data.config.terminalPressureStartRound || 41);
-    if (round < startRound) return "压力第 " + startRound + " 轮开始";
-    return "压力 " + money(lifePressureAmount(round, activePlayerCount)) +
-      " → " + money(lifePressureAmount(round + 1, activePlayerCount));
+    if (round < startRound) return "压力" + startRound + "轮起";
+    return "压力" + money(lifePressureAmount(round, activePlayerCount)) +
+      "→" + money(lifePressureAmount(round + 1, activePlayerCount));
   }
   function firstDefined() {
     for (var i = 0; i < arguments.length; i += 1) {
@@ -184,7 +194,10 @@
     var round = Math.floor(state.globalTurn / state.players.length) + 1;
     var activePlayerCount = state.players.filter(function (player) { return !player.bankrupt; }).length;
     var canFastForward = yimin.bankrupt && !state.ended;
-    elements["round-number"].textContent = "第 " + round + " 轮 · " + activePlayerCount + " 人 · " + lifePressureLabel(round, activePlayerCount);
+    var roundLabel = "第" + round + "轮 · " + activePlayerCount + "人 · " + lifePressureLabel(round, activePlayerCount);
+    elements["round-number"].textContent = roundLabel;
+    elements["round-number"].dataset.shortLabel = "第" + round + "轮 · " + activePlayerCount + "人";
+    elements["round-number"].setAttribute("aria-label", roundLabel);
     elements["round-number"].title = round < Number(data.config.terminalPressureStartRound || 41)
       ? "生活压力将在第 " + Number(data.config.terminalPressureStartRound || 41) + " 轮开始"
       : "生活压力：本轮 " + money(lifePressureAmount(round, activePlayerCount)) + "，下一轮 " + money(lifePressureAmount(round + 1, activePlayerCount));
@@ -220,6 +233,7 @@
       var item = document.createElement("li");
       item.className = "player-card";
       item.dataset.playerId = player.id;
+      item.style.setProperty("--player-color", player.color);
       item.setAttribute("role", "button");
       item.setAttribute("tabindex", "0");
       item.setAttribute("aria-label", "查看" + player.name + "的资产");
@@ -244,7 +258,9 @@
       nameRow.append(name, persona);
       var cash = document.createElement("span");
       cash.className = "player-cash";
-      cash.textContent = money(player.money) + " 币";
+      cash.textContent = compactMoney(player.money);
+      cash.title = money(player.money) + " 快乐币";
+      cash.setAttribute("aria-label", money(player.money) + " 快乐币");
       var progress = document.createElement("div");
       progress.className = "player-progress";
       progress.setAttribute("aria-hidden", "true");
@@ -299,7 +315,9 @@
         levelBadge.textContent = "";
         cell.setAttribute("aria-label", "第 " + tile.index + " 格 " + tile.name);
       }
-      state.players.filter(function (player) { return !player.bankrupt && player.position === tile.index; }).forEach(function (player) {
+      var occupants = state.players.filter(function (player) { return !player.bankrupt && player.position === tile.index; });
+      cell.classList.toggle("has-tokens", occupants.length > 0);
+      occupants.forEach(function (player) {
         var token = document.createElement("span");
         token.className = "token";
         token.textContent = player.avatar;
