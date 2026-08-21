@@ -5,7 +5,7 @@
   var PREF_KEY = "yimin-adventure-v1-prefs";
   var HISTORY_KEY = "yimin-adventure-v1-history";
   var HISTORY_LIMIT = 10;
-  var MOVE_SPEED_MULTIPLIER = 0.8;
+  var MOVE_SPEED_MULTIPLIER = 0.6;
   var data = window.GAME_DATA;
   var engine = null;
   var busy = false;
@@ -588,6 +588,7 @@
         var loser = getPlayer(state, event.loserId);
         return "石头剪刀布结束，" + (winner ? winner.name : "胜方") + " 获胜，" + (loser ? loser.name : "败方") + " 后退 5 格";
       }
+      case "chainCapped": return event.source === "rpsTies" ? "连续猜拳平局，本次结束，双方都不后退" : null;
       case "bonusTurnGranted": return playerName + " 获得一次额外行动";
       case "companionRescue": return "伙伴护住了伊敏，这局还有转机";
       case "maintenanceFeeIncreased": return "生活压力上升，下一轮每名存活玩家需支付 " + money(event.nextFee);
@@ -695,7 +696,13 @@
       var eventTitles = { startLanded: "回到温暖小窝", safeResolved: "休息时间", adventure: "冒险结果", idleMoment: "发呆时刻", skipAdded: "暂停状态" };
       return { title: eventTitles[event.type], body: message, icon: event.type === "skipAdded" ? "!" : "✦", tone: tone };
     }
-    if (["diceDuelRound", "rpsResolved"].includes(event.type) && player && player.isHuman) return { title: event.type === "diceDuelRound" ? "掷骰子对决" : "猜拳结果", body: message, icon: "★", tone: "neutral" };
+    if (event.type === "diceDuelRound" && player && player.isHuman) return { title: "掷骰子对决", body: message, icon: "★", tone: "neutral" };
+    if (event.type === "rpsRound" && event.playerMove === event.opponentMove) return { title: "猜拳平局", body: message + "，再来一次", icon: "拳", tone: "neutral" };
+    if (event.type === "rpsResolved") {
+      var rpsTone = event.winnerId === "yimin" ? "positive" : event.loserId === "yimin" ? "negative" : "neutral";
+      return { title: "猜拳结果", body: message, icon: "拳", tone: rpsTone };
+    }
+    if (event.type === "chainCapped" && event.source === "rpsTies") return { title: "连续平局", body: message, icon: "拳", tone: "neutral" };
     if (event.type === "gameMomentConfirmationResolved" && player && player.isHuman) return { title: event.confirmed ? "任务确认通过" : "任务确认未通过", body: message, icon: event.confirmed ? "✓" : "!", tone: event.confirmed ? "positive" : "negative" };
     if (event.type === "moneyChanged" && player && player.isHuman && Number(event.delta) < 0 && !["buyProperty", "propertyPurchase", "upgradeProperty", "propertyUpgrade", "bankDeposit", "propertyConsumption", "collisionFee"].includes(event.reason)) {
       return { title: "快乐币扣除", body: message, icon: "−", tone: "negative" };

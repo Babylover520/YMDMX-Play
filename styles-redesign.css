@@ -3774,7 +3774,7 @@ body {
   }
 }
 
-/* Build 44: event results pause the board and read clearly above the dice. */
+/* Build 45: event results pause the board and expand above the dice without clipping copy. */
 .event-result-region {
   position: absolute;
   z-index: 240;
@@ -3849,19 +3849,23 @@ body {
 }
 
 .event-result-copy strong {
-  display: -webkit-box;
-  overflow: hidden;
+  display: block;
+  overflow: visible;
   color: #fff;
   font-size: 16px;
   line-height: 1.25;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
+  -webkit-line-clamp: unset;
 }
 
 .event-result-copy > span {
+  display: block;
+  overflow: visible;
   color: rgba(255, 255, 255, 0.94);
   font-size: 14px;
   line-height: 1.35;
+  overflow-wrap: anywhere;
+  -webkit-line-clamp: unset;
 }
 
 .event-result-timer {
@@ -3903,14 +3907,15 @@ body {
 
 @media (max-width: 520px) {
   .event-result-region {
-    top: clamp(112px, 34cqw, 142px);
-    width: min(236px, 64cqw);
+    top: auto;
+    bottom: 53%;
+    width: min(300px, calc(100cqw - 24px));
   }
 
   .event-result-card {
     gap: 6px 8px;
     min-height: 80px;
-    max-height: 112px;
+    max-height: none;
     padding: 9px 10px 7px;
   }
 }
