@@ -3773,3 +3773,152 @@ body {
     text-align: center;
   }
 }
+
+/* Build 44: event results pause the board and read clearly above the dice. */
+.event-result-region {
+  position: absolute;
+  z-index: 240;
+  top: 26%;
+  left: 50%;
+  width: min(440px, 60cqw);
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.event-pause-backdrop {
+  position: fixed;
+  z-index: 230;
+  inset: 0;
+  background: rgba(18, 48, 40, 0.2);
+  pointer-events: auto;
+  animation: event-backdrop-in 180ms ease-out both;
+}
+
+.event-result-card {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 8px 10px;
+  min-height: 78px;
+  padding: 10px 12px 8px;
+  border: 2px solid #0f3b32;
+  border-left-width: 6px;
+  border-radius: 8px;
+  color: #fff;
+  background: #174f43;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.94), 0 12px 28px rgba(15, 48, 39, 0.34);
+  pointer-events: none;
+  animation: event-result-in 220ms ease-out both;
+}
+
+.event-result-card.is-positive {
+  border-color: #0d4637;
+  background: #1c6b55;
+}
+
+.event-result-card.is-negative {
+  border-color: #6e2138;
+  background: #a73551;
+}
+
+.event-result-card.is-card-reveal {
+  border-color: #342855;
+  background: #514174;
+}
+
+.event-result-card.is-pause,
+.event-result-card.is-turn-pause {
+  border-color: #18344b;
+  background: #295674;
+}
+
+.event-result-card.is-leaving {
+  opacity: 0;
+  transform: translateY(-8px) scale(0.98);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.event-result-icon {
+  width: 44px;
+  height: 44px;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  color: #173f37;
+  background: #fff1a8;
+  font-size: 20px;
+}
+
+.event-result-copy strong {
+  display: -webkit-box;
+  overflow: hidden;
+  color: #fff;
+  font-size: 16px;
+  line-height: 1.25;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.event-result-copy > span {
+  color: rgba(255, 255, 255, 0.94);
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.event-result-timer {
+  grid-column: 1 / -1;
+  display: block;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.event-result-timer::after {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  content: "";
+  background: #fff1a8;
+  transform-origin: left center;
+  animation: event-result-timer 3000ms linear forwards;
+}
+
+.game-screen.is-event-paused .board,
+.game-screen.is-event-paused .game-toolbar,
+.game-screen.is-event-paused .player-rail,
+.game-screen.is-event-paused .side-panel {
+  filter: saturate(0.68) brightness(0.86);
+}
+
+@keyframes event-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes event-result-timer {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
+@media (max-width: 520px) {
+  .event-result-region {
+    top: clamp(112px, 34cqw, 142px);
+    width: min(236px, 64cqw);
+  }
+
+  .event-result-card {
+    gap: 6px 8px;
+    min-height: 80px;
+    max-height: 112px;
+    padding: 9px 10px 7px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .event-pause-backdrop,
+  .event-result-card,
+  .event-result-timer::after {
+    animation: none;
+  }
+}

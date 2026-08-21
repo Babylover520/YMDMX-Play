@@ -5,6 +5,7 @@
   var PREF_KEY = "yimin-adventure-v1-prefs";
   var HISTORY_KEY = "yimin-adventure-v1-history";
   var HISTORY_LIMIT = 10;
+  var MOVE_SPEED_MULTIPLIER = 0.8;
   var data = window.GAME_DATA;
   var engine = null;
   var busy = false;
@@ -15,7 +16,6 @@
   var audioContext = null;
   var spectatorFastForward = false;
   var lastDialogueTurnByPlayer = {};
-  var eventNoticeQueue = [];
   var eventNoticeActive = false;
 
   function byId(id) { return document.getElementById(id); }
@@ -203,7 +203,15 @@
       : "生活压力：本轮 " + money(lifePressureAmount(round, activePlayerCount)) + "，下一轮 " + money(lifePressureAmount(round + 1, activePlayerCount));
     elements["turn-player-name"].textContent = active.name;
     elements["island-title"].textContent = state.ended ? "本局结算" : canFastForward ? "观战结算" : active.isHuman ? active.name + "的回合" : active.name + " 行动中";
-    elements["turn-status"].textContent = state.ended ? "这一局已经完成" : canFastForward ? "伊敏进入观战" : active.isHuman ? "轮到你出发啦" : active.name + " 正在行动";
+    elements["turn-status"].textContent = state.ended
+      ? "这一局已经完成"
+      : canFastForward
+        ? "伊敏进入观战"
+        : active.statuses.skipTurns > 0
+          ? "暂停中，本回合无法行动"
+          : active.isHuman
+            ? "轮到你出发啦"
+            : active.name + " 正在行动";
     elements["game-hint"].textContent = state.ended ? "看看大家带回了多少快乐。" : canFastForward ? "点击快速结算，看看最后由谁留在场上。" : active.isHuman ? "本轮停在他人地产：" + consumptionRateLabel(round) + "。" : "AI 伙伴会自己完成购买、升级和事件选择。";
     elements["current-cash"].textContent = money(yimin.money);
     elements["current-net-worth"].textContent = money(netWorthFor(state, yimin));
@@ -216,8 +224,8 @@
     elements["companion-note"].textContent = state.settings && state.settings.careMode === false
       ? "伙伴鼓励已关闭，AI 会安静地认真经营。"
       : "伙伴鼓励已开启，AI 会在关键事件后送上几句陪伴。";
-    elements["roll-button"].disabled = busy || state.ended || (!canFastForward && (!active.isHuman || active.bankrupt));
-    elements["roll-button"].querySelector("span:last-child").textContent = state.ended ? "查看结算" : canFastForward ? "快速结算" : active.statuses.skipTurns > 0 ? "结算暂停" : "掷骰子";
+    elements["roll-button"].disabled = eventNoticeActive || busy || state.ended || (!canFastForward && (!active.isHuman || active.bankrupt || active.statuses.skipTurns > 0));
+    elements["roll-button"].querySelector("span:last-child").textContent = state.ended ? "查看结算" : canFastForward ? "快速结算" : active.statuses.skipTurns > 0 ? "暂停一回合" : "掷骰子";
     renderPlayers(state);
     renderBoardState(state);
     renderAssets(state, yimin);
@@ -544,7 +552,7 @@
       case "scratchCardResolved": return playerName + " 刮开「" + (card ? card.name : "卡牌") + "」，" + (Number(event.amount) >= 0 ? "获得 " : "损失 ") + money(Math.abs(Number(event.amount) || 0)) + " 快乐币";
       case "lifeEvent": return playerName + " 遇到了「" + (event.name || (tile && tile.name) || "生活彩蛋") + "」" + (event.text ? "：" + event.text : "");
       case "idleMoment": return playerName + " 在发呆时刻放空了一会儿";
-      case "safeResolved": return playerName + " 在休息时间领取 300 快乐币，并暂停一回合";
+      case "safeResolved": return playerName + " 在休息时间领取 300 快乐币" + (event.pauseRemaining > 0 ? "，并暂停一回合" : "，暂停已被满血卡抵消");
       case "adventure": return playerName + " 的冒险结果：" + ({ forward: "前进 3 格", consumeCard: "获得消费卡", back: "后退 2 格", fine: "罚款 100" }[event.outcome] || "特殊事件");
       case "cityInspectionProperty": {
         var inspectedOwner = getPlayer(state, event.ownerId);
@@ -595,19 +603,31 @@
     }
   }
 
-  function queueEventNotice(config) {
-    if (!config || !config.title) return;
-    if (eventNoticeQueue.length >= 4) eventNoticeQueue.shift();
-    eventNoticeQueue.push(config);
-    processEventNoticeQueue();
-  }
-
-  async function processEventNoticeQueue() {
-    if (eventNoticeActive || !eventNoticeQueue.length || !elements["event-result-region"]) return;
+  async function showEventNotice(config) {
+    if (!config || !config.title || !elements["event-result-region"]) return;
+    while (eventNoticeActive) await wait(20);
     eventNoticeActive = true;
-    var config = eventNoticeQueue.shift();
+    var region = elements["event-result-region"];
+    var lockTargets = [
+      elements["game-screen"].querySelector(".game-toolbar"),
+      elements["player-list"],
+      elements["board"],
+      elements["side-panel"]
+    ].filter(Boolean).map(function (target) {
+      return { target: target, inert: Boolean(target.inert) };
+    });
+    lockTargets.forEach(function (entry) { entry.target.inert = true; });
+    elements["game-screen"].classList.add("is-event-paused");
+    elements["game-screen"].setAttribute("aria-busy", "true");
+    region.classList.add("is-active");
+
+    var backdrop = document.createElement("span");
+    backdrop.className = "event-pause-backdrop";
+    backdrop.setAttribute("aria-hidden", "true");
     var notice = document.createElement("article");
-    notice.className = "event-result-card is-" + (config.tone || "neutral") + (config.card ? " is-card-reveal" : "");
+    notice.className = "event-result-card is-" + (config.tone || "neutral") + (config.card ? " is-card-reveal" : "") + (config.pause ? " is-turn-pause" : "");
+    notice.setAttribute("role", "status");
+    notice.setAttribute("aria-label", config.title + (config.body ? "。" + config.body : ""));
     var icon = document.createElement("span");
     icon.className = "event-result-icon";
     icon.textContent = config.icon || (config.tone === "positive" ? "+" : config.tone === "negative" ? "−" : "·");
@@ -619,31 +639,47 @@
     var body = document.createElement("span");
     body.textContent = config.body || "";
     copy.append(title, body);
-    var close = document.createElement("button");
-    close.type = "button";
-    close.className = "event-result-close";
-    close.setAttribute("aria-label", "关闭提示");
-    close.textContent = "×";
-    notice.append(icon, copy, close);
-    elements["event-result-region"].replaceChildren(notice);
-    var dismissed = new Promise(function (resolve) { close.addEventListener("click", resolve, { once: true }); });
-    await Promise.race([wait(config.duration || (fastMode ? 900 : 2600)), dismissed]);
-    notice.classList.add("is-leaving");
-    await wait(180);
-    notice.remove();
-    eventNoticeActive = false;
-    processEventNoticeQueue();
+    var timer = document.createElement("span");
+    timer.className = "event-result-timer";
+    timer.setAttribute("aria-hidden", "true");
+    notice.append(icon, copy, timer);
+    document.body.appendChild(backdrop);
+    region.replaceChildren(notice);
+    elements["screen-reader-status"].textContent = config.title + (config.body ? "。" + config.body : "") + "。3 秒后继续";
+
+    try {
+      await wait(3000);
+      notice.classList.add("is-leaving");
+      await wait(180);
+    } finally {
+      backdrop.remove();
+      region.replaceChildren();
+      region.classList.remove("is-active");
+      elements["game-screen"].classList.remove("is-event-paused");
+      elements["game-screen"].removeAttribute("aria-busy");
+      lockTargets.forEach(function (entry) { entry.target.inert = entry.inert; });
+      eventNoticeActive = false;
+    }
   }
 
   function noticeForEvent(event, state, message, tone) {
     var player = event.playerId ? getPlayer(state, event.playerId) : null;
     var card = event.cardId ? data.cards[event.cardId] : null;
+    if (event.type === "turnSkipped") {
+      return {
+        title: (player ? player.name : "玩家") + "暂停一回合",
+        body: event.remaining > 0 ? "本回合不行动，还剩 " + event.remaining + " 次暂停。下一位玩家将继续。" : "本回合不行动，下一位玩家将继续。",
+        icon: "停",
+        tone: "pause",
+        pause: true
+      };
+    }
     if (event.type === "cardDrawn") {
-      return { title: (player ? player.name + "抽到 " : "抽到 ") + (card ? card.name : "一张卡"), body: card ? card.text : message, icon: "◇", tone: tone, card: true, duration: 3800 };
+      return { title: (player ? player.name + "抽到 " : "抽到 ") + (card ? card.name : "一张卡"), body: card ? card.text : message, icon: "◇", tone: tone, card: true };
     }
     if (event.type === "cardUsed") return { title: (card ? card.name : "卡牌") + "已生效", body: message, icon: "◇", tone: tone, card: true };
-    if (event.type === "cardDiscarded" && player && player.isHuman) return { title: "手牌已满", body: message, icon: "◇", tone: "negative", card: true, duration: 3200 };
-    if (event.type === "scratchCardResolved") return { title: event.result === "win" ? "刮奖成功" : "投资结果揭晓", body: message, icon: "◇", tone: tone, card: true, duration: 3400 };
+    if (event.type === "cardDiscarded" && player && player.isHuman) return { title: "手牌已满", body: message, icon: "◇", tone: "negative", card: true };
+    if (event.type === "scratchCardResolved") return { title: event.result === "win" ? "刮奖成功" : "投资结果揭晓", body: message, icon: "◇", tone: tone, card: true };
     if (event.type === "propertyBought") return { title: "地产购买成功", body: message, icon: "店", tone: tone };
     if (event.type === "propertyUpgraded") return { title: "地产升级成功", body: message, icon: "↑", tone: tone };
     if (event.type === "businessRevenue" && player && player.isHuman) return { title: "领取地产营收", body: message, icon: "+", tone: "positive" };
@@ -659,12 +695,12 @@
       var eventTitles = { startLanded: "回到温暖小窝", safeResolved: "休息时间", adventure: "冒险结果", idleMoment: "发呆时刻", skipAdded: "暂停状态" };
       return { title: eventTitles[event.type], body: message, icon: event.type === "skipAdded" ? "!" : "✦", tone: tone };
     }
-    if (["diceDuelRound", "rpsResolved"].includes(event.type) && player && player.isHuman) return { title: event.type === "diceDuelRound" ? "掷骰子对决" : "猜拳结果", body: message, icon: "★", tone: "neutral", duration: 3400 };
+    if (["diceDuelRound", "rpsResolved"].includes(event.type) && player && player.isHuman) return { title: event.type === "diceDuelRound" ? "掷骰子对决" : "猜拳结果", body: message, icon: "★", tone: "neutral" };
     if (event.type === "gameMomentConfirmationResolved" && player && player.isHuman) return { title: event.confirmed ? "任务确认通过" : "任务确认未通过", body: message, icon: event.confirmed ? "✓" : "!", tone: event.confirmed ? "positive" : "negative" };
     if (event.type === "moneyChanged" && player && player.isHuman && Number(event.delta) < 0 && !["buyProperty", "propertyPurchase", "upgradeProperty", "propertyUpgrade", "bankDeposit", "propertyConsumption", "collisionFee"].includes(event.reason)) {
       return { title: "快乐币扣除", body: message, icon: "−", tone: "negative" };
     }
-    if (["playerBankrupt", "gameEnded", "companionRescue", "cityInspection"].includes(event.type)) return { title: event.type === "gameEnded" ? "本局结束" : event.type === "playerBankrupt" ? "玩家破产" : event.type === "cityInspection" ? "城管检查" : "伙伴救援", body: message, icon: "!", tone: tone, duration: 3400 };
+    if (["playerBankrupt", "gameEnded", "companionRescue", "cityInspection"].includes(event.type)) return { title: event.type === "gameEnded" ? "本局结束" : event.type === "playerBankrupt" ? "玩家破产" : event.type === "cityInspection" ? "城管检查" : "伙伴救援", body: message, icon: "!", tone: tone };
     return null;
   }
 
@@ -684,6 +720,13 @@
 
   async function onEngineEvent(event, state) {
     if (spectatorFastForward && !["playerBankrupt", "maintenanceFeeIncreased", "gameEnded", "error"].includes(event.type)) return;
+    var sourcePlayer = event.playerId ? getPlayer(state, event.playerId) : null;
+    var suppressBankruptActivity = sourcePlayer && sourcePlayer.bankrupt &&
+      !["playerBankrupt", "gameEnded", "error"].includes(event.type);
+    if (suppressBankruptActivity) {
+      render(state);
+      return;
+    }
     if (event.type === "diceRolled") {
       await animateDice(event.value);
       playTone(500 + event.value * 45, 0.05);
@@ -695,7 +738,7 @@
       var tone = eventTone(event);
       addLog(message, tone, event.playerId);
       var notice = noticeForEvent(event, state, message, tone);
-      if (notice) queueEventNotice(notice);
+      if (notice) await showEventNotice(notice);
     }
     maybeCompanionLine(event, state);
     if (event.type === "gameEnded") {
@@ -733,7 +776,9 @@
 
   async function onEngineDelay(kind) {
     if (spectatorFastForward) return;
-    var timing = fastMode ? { moveStep: 55, event: 80 } : { moveStep: 180, event: 220 };
+    var timing = fastMode
+      ? { moveStep: Math.round(55 / MOVE_SPEED_MULTIPLIER), event: 80 }
+      : { moveStep: Math.round(180 / MOVE_SPEED_MULTIPLIER), event: 220 };
     await wait(timing[kind] || (fastMode ? 30 : 80));
   }
 
@@ -1294,9 +1339,11 @@
       engine.state.players.forEach(function (player, index) { player.name = setup.playerNames[index] || player.name; });
     }
     uiLog = [];
-    eventNoticeQueue = [];
     eventNoticeActive = false;
     elements["event-result-region"].textContent = "";
+    elements["event-result-region"].classList.remove("is-active");
+    elements["game-screen"].classList.remove("is-event-paused");
+    elements["game-screen"].removeAttribute("aria-busy");
     lastDialogueTurnByPlayer = {};
     elements["start-screen"].hidden = true;
     addLog(setup.playerNames[0] + "和三位伙伴出发啦", "positive", "yimin");
@@ -1368,6 +1415,7 @@
     var yimin = getPlayer(state, "yimin") || state.players[0];
     if (yimin.bankrupt) return fastForwardRemainingGame();
     if (!currentPlayer(state).isHuman) return;
+    if (currentPlayer(state).statuses.skipTurns > 0) return runAiUntilHuman();
     busy = true;
     render(state);
     try {
@@ -1385,10 +1433,14 @@
 
   async function runAiUntilHuman() {
     var safety = 0;
-    while (engine && !engine.isGameOver() && !currentPlayer(engine.getState()).isHuman && safety < 12) {
+    while (engine && !engine.isGameOver() && safety < 60) {
+      var state = engine.getState();
+      var active = currentPlayer(state);
+      var pausedHuman = active.isHuman && !active.bankrupt && active.statuses.skipTurns > 0;
+      if (active.isHuman && !pausedHuman) break;
       busy = true;
-      render(engine.getState());
-      await wait(fastMode ? 90 : 340);
+      render(state);
+      await wait(pausedHuman ? 160 : fastMode ? 90 : 340);
       await engine.playTurn();
       saveGame();
       safety += 1;
@@ -1442,6 +1494,7 @@
   }
 
   function activatePanelTab(buttonId, openPanel) {
+    if (eventNoticeActive) return;
     var tabs = [
       { button: elements["tab-events"], panel: elements["event-log"] },
       { button: elements["tab-cards"], panel: elements["card-panel"] },
@@ -1482,6 +1535,7 @@
     });
     elements["speed-toggle"].addEventListener("change", function () { fastMode = this.checked; savePreferences(); });
     elements["sound-toggle"].addEventListener("click", function () {
+      if (eventNoticeActive) return;
       soundEnabled = !soundEnabled;
       this.setAttribute("aria-pressed", String(!soundEnabled));
       this.setAttribute("aria-label", soundEnabled ? "关闭声音" : "开启声音");
@@ -1489,6 +1543,7 @@
       savePreferences();
     });
     elements["restart-button"].addEventListener("click", async function () {
+      if (eventNoticeActive) return;
       var restart = await modalChoice({ icon: "↻", title: "重新开始这局？", body: "当前进度会被新的冒险覆盖。", actions: [
         { label: "重新开始", value: true, variant: "danger" }, { label: "继续当前游戏", value: false, variant: "secondary" }
       ] });
@@ -1496,6 +1551,7 @@
     });
     elements["modal-close"].addEventListener("click", function () { closeModal(undefined); });
     elements["panel-toggle"].addEventListener("click", function () {
+      if (eventNoticeActive) return;
       var open = !elements["side-panel"].classList.contains("is-open");
       elements["side-panel"].classList.toggle("is-open", open);
       this.setAttribute("aria-expanded", String(open));
@@ -1504,6 +1560,10 @@
       if (label) label.textContent = open ? "收起游戏信息" : "展开游戏信息";
     });
     document.addEventListener("keydown", function (event) {
+      if (eventNoticeActive) {
+        if (["Space", "Enter", "Escape"].includes(event.code) || event.key === "Escape") event.preventDefault();
+        return;
+      }
       if (event.key === "Escape" && !elements["modal-layer"].hidden) closeModal(undefined);
       var target = event.target;
       var isInteractive = target && target.closest && target.closest("button, input, select, textarea, a, [contenteditable='true'], [role='tab']");
