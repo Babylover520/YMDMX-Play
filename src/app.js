@@ -15,12 +15,45 @@
   var audioContext = null;
   var spectatorFastForward = false;
   var lastDialogueTurnByPlayer = {};
+  var eventNoticeQueue = [];
+  var eventNoticeActive = false;
 
   function byId(id) { return document.getElementById(id); }
   function money(value) { return Math.max(0, Number(value) || 0).toLocaleString("zh-CN"); }
   function wait(ms) { return new Promise(function (resolve) { window.setTimeout(resolve, ms); }); }
   function getPlayer(state, id) { return state.players.find(function (player) { return player.id === id; }); }
   function currentPlayer(state) { return state.players[state.currentPlayerIndex]; }
+  function consumptionRateLabel(round) {
+    if (round <= 20) return "1 / 3 概率消费";
+    if (round <= 40) return "1 / 2 概率消费";
+    if (round <= 60) return "2 / 3 概率消费";
+    return "每次必消费";
+  }
+  function lifePressureAmount(round, activePlayerCount) {
+    var bands = data.config.terminalPressureBands || [];
+    var baseFee = 0;
+    for (var i = 0; i < bands.length; i += 1) {
+      var band = bands[i];
+      if (round >= band.minRound && (band.maxRound == null || round <= band.maxRound)) {
+        baseFee = band.base + band.step * (round - band.minRound);
+        break;
+      }
+    }
+    var multipliers = data.config.terminalPressureMultipliers || {};
+    return Math.max(0, Math.round(baseFee * Number(multipliers[activePlayerCount] || 0)));
+  }
+  function lifePressureLabel(round, activePlayerCount) {
+    var startRound = Number(data.config.terminalPressureStartRound || 41);
+    if (round < startRound) return "压力第 " + startRound + " 轮开始";
+    return "压力 " + money(lifePressureAmount(round, activePlayerCount)) +
+      " → " + money(lifePressureAmount(round + 1, activePlayerCount));
+  }
+  function firstDefined() {
+    for (var i = 0; i < arguments.length; i += 1) {
+      if (arguments[i] !== undefined && arguments[i] !== null) return arguments[i];
+    }
+    return 0;
+  }
 
   var elements = {};
   var tileElements = new Map();
@@ -31,10 +64,12 @@
       "game-screen", "round-number", "turn-player-name", "turn-status", "island-title", "game-hint",
       "speed-toggle", "restart-button", "sound-toggle", "player-list", "active-player-count",
       "companion-note", "board", "board-tiles", "dice", "dice-value", "roll-button",
-      "current-cash", "current-net-worth", "current-card-count", "board-announcement",
+      "current-cash", "current-net-worth", "current-card-count", "quick-cards-button", "quick-card-count",
+      "active-status-list", "board-announcement", "event-result-region", "money-feedback-region",
       "side-panel", "panel-toggle", "tab-events", "tab-cards", "tab-assets", "event-log",
-      "event-log-list", "card-panel", "card-list", "hand-count", "asset-panel", "asset-cash",
-      "asset-deposit", "asset-properties-value", "asset-debt", "property-count", "property-list",
+      "event-log-list", "card-panel", "card-list", "hand-count", "hand-owner-name", "tab-card-count",
+      "asset-panel", "asset-owner-name", "asset-net-worth", "asset-cash", "asset-deposit", "asset-interest",
+      "asset-interest-earned", "asset-properties-value", "property-count", "property-list",
       "log-count", "modal-layer", "game-modal", "modal-close", "modal-icon", "modal-kicker",
       "modal-title", "modal-body", "modal-actions", "bank-action-container",
       "property-action-container", "toast-region", "screen-reader-status", "player-card-template"
@@ -96,7 +131,7 @@
       cell.style.setProperty("--tile-rotation", position.rotation + "deg");
       cell.dataset.edge = position.edge;
       cell.dataset.mobileSegment = mobilePosition.segment;
-      if (tile.type === "start" || tile.type === "bank" || tile.type === "review" || tile.name === "星光影院" || tile.name === "梦想商场") {
+      if (tile.type === "start" || tile.type === "bank" || tile.type === "review" || tile.propertyId === "cinema" || tile.propertyId === "mall") {
         cell.dataset.landmark = "true";
       }
       if (position.corner) cell.dataset.corner = "true";
@@ -132,8 +167,14 @@
     }, 0);
   }
 
+  function collectibleRevenueFor(state, playerId) {
+    return state.board.reduce(function (sum, tile) {
+      return sum + (tile.ownerId === playerId ? Math.round((tile.currentTurnover || 0) * 0.5) : 0);
+    }, 0);
+  }
+
   function netWorthFor(state, player) {
-    return player.money + player.bankPrincipal + player.bankInterest + propertyValueFor(state, player.id);
+    return player.money + player.bankPrincipal + player.bankInterest + propertyValueFor(state, player.id) + collectibleRevenueFor(state, player.id);
   }
 
   function render(state) {
@@ -143,24 +184,32 @@
     var round = Math.floor(state.globalTurn / state.players.length) + 1;
     var activePlayerCount = state.players.filter(function (player) { return !player.bankrupt; }).length;
     var canFastForward = yimin.bankrupt && !state.ended;
-    elements["round-number"].textContent = "第 " + round + " 轮 · " + activePlayerCount + " 人在场";
+    elements["round-number"].textContent = "第 " + round + " 轮 · " + activePlayerCount + " 人 · " + lifePressureLabel(round, activePlayerCount);
+    elements["round-number"].title = round < Number(data.config.terminalPressureStartRound || 41)
+      ? "生活压力将在第 " + Number(data.config.terminalPressureStartRound || 41) + " 轮开始"
+      : "生活压力：本轮 " + money(lifePressureAmount(round, activePlayerCount)) + "，下一轮 " + money(lifePressureAmount(round + 1, activePlayerCount));
     elements["turn-player-name"].textContent = active.name;
-    elements["island-title"].textContent = state.ended ? "本局结算" : canFastForward ? "观战结算" : active.isHuman ? "伊敏的回合" : active.name + " 行动中";
+    elements["island-title"].textContent = state.ended ? "本局结算" : canFastForward ? "观战结算" : active.isHuman ? active.name + "的回合" : active.name + " 行动中";
     elements["turn-status"].textContent = state.ended ? "这一局已经完成" : canFastForward ? "伊敏进入观战" : active.isHuman ? "轮到你出发啦" : active.name + " 正在行动";
-    elements["game-hint"].textContent = state.ended ? "看看大家带回了多少快乐。" : canFastForward ? "点击快速结算，看看最后由谁留在场上。" : active.isHuman ? "停在他人的地产时，有 1 / 3 概率产生消费。" : "AI 伙伴会自己完成购买、升级和事件选择。";
+    elements["game-hint"].textContent = state.ended ? "看看大家带回了多少快乐。" : canFastForward ? "点击快速结算，看看最后由谁留在场上。" : active.isHuman ? "本轮停在他人地产：" + consumptionRateLabel(round) + "。" : "AI 伙伴会自己完成购买、升级和事件选择。";
     elements["current-cash"].textContent = money(yimin.money);
     elements["current-net-worth"].textContent = money(netWorthFor(state, yimin));
-    elements["current-card-count"].textContent = yimin.hand.length + " / " + data.config.handLimit;
+    var handSize = Array.isArray(yimin.hand) ? yimin.hand.length : 0;
+    var handLabel = handSize + " / " + data.config.handLimit;
+    elements["current-card-count"].textContent = handLabel;
+    elements["quick-card-count"].textContent = handLabel;
+    elements["tab-card-count"].textContent = handLabel;
     elements["active-player-count"].textContent = String(activePlayerCount);
     elements["companion-note"].textContent = state.settings && state.settings.careMode === false
-      ? "公平模式已开启，AI 会按相同规则认真经营。"
-      : "陪伴模式已开启，伙伴们会在关键时刻照顾伊敏。";
+      ? "伙伴鼓励已关闭，AI 会安静地认真经营。"
+      : "伙伴鼓励已开启，AI 会在关键事件后送上几句陪伴。";
     elements["roll-button"].disabled = busy || state.ended || (!canFastForward && (!active.isHuman || active.bankrupt));
     elements["roll-button"].querySelector("span:last-child").textContent = state.ended ? "查看结算" : canFastForward ? "快速结算" : active.statuses.skipTurns > 0 ? "结算暂停" : "掷骰子";
     renderPlayers(state);
     renderBoardState(state);
     renderAssets(state, yimin);
     renderCards(state, yimin);
+    renderActiveStatuses(yimin);
     renderLogs();
   }
 
@@ -170,6 +219,10 @@
     state.players.forEach(function (player) {
       var item = document.createElement("li");
       item.className = "player-card";
+      item.dataset.playerId = player.id;
+      item.setAttribute("role", "button");
+      item.setAttribute("tabindex", "0");
+      item.setAttribute("aria-label", "查看" + player.name + "的资产");
       if (state.players[state.currentPlayerIndex].id === player.id) item.classList.add("is-current");
       if (player.bankrupt) item.classList.add("is-bankrupt");
 
@@ -203,6 +256,13 @@
       status.className = "player-status";
       status.textContent = player.bankrupt ? "已破产" : player.statuses.skipTurns ? "暂停" : player.statuses.forcedConsumption ? "必买 " + player.statuses.forcedConsumption : "";
       item.append(avatar, main, status);
+      item.addEventListener("click", function () { openPlayerAssets(player.id); });
+      item.addEventListener("keydown", function (event) {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          openPlayerAssets(player.id);
+        }
+      });
       list.appendChild(item);
     });
   }
@@ -215,17 +275,29 @@
       var ownerBadge = cell.querySelector(".tile-owner");
       var levelBadge = cell.querySelector(".tile-level");
       var tokenStack = cell.querySelector(".token-stack");
+      var tileName = cell.querySelector(".tile-name");
+      if (tileName) tileName.textContent = tile.shortLabel || tile.name;
       tokenStack.textContent = "";
       if (tile.ownerId) {
         var owner = getPlayer(state, tile.ownerId);
+        cell.classList.add("has-owner");
+        cell.dataset.ownerId = tile.ownerId;
+        cell.style.setProperty("--owner-color", owner ? owner.color : "#52796f");
         ownerBadge.textContent = owner ? owner.avatar : "店";
         ownerBadge.style.backgroundColor = owner ? owner.color : "";
         ownerBadge.title = owner ? owner.name + "的地产" : "已经营";
+        ownerBadge.setAttribute("aria-label", owner ? owner.name + "的地产" : "已经营");
         levelBadge.textContent = "Lv." + tile.level;
+        cell.setAttribute("aria-label", "第 " + tile.index + " 格 " + tile.name + "，" + (owner ? owner.name + "的地产" : "已经营") + "，等级 " + tile.level);
       } else {
+        cell.classList.remove("has-owner");
+        delete cell.dataset.ownerId;
+        cell.style.removeProperty("--owner-color");
         ownerBadge.textContent = "";
         ownerBadge.removeAttribute("style");
+        ownerBadge.removeAttribute("aria-label");
         levelBadge.textContent = "";
+        cell.setAttribute("aria-label", "第 " + tile.index + " 格 " + tile.name);
       }
       state.players.filter(function (player) { return !player.bankrupt && player.position === tile.index; }).forEach(function (player) {
         var token = document.createElement("span");
@@ -240,10 +312,14 @@
 
   function renderAssets(state, player) {
     var owned = state.board.filter(function (tile) { return tile.ownerId === player.id; });
+    var interestCap = firstDefined(data.config.bankInterestCap, 2000);
+    elements["asset-owner-name"].textContent = player.name + "的资产";
+    elements["asset-net-worth"].textContent = money(netWorthFor(state, player));
     elements["asset-cash"].textContent = money(player.money);
-    elements["asset-deposit"].textContent = money(player.bankPrincipal + player.bankInterest);
+    elements["asset-deposit"].textContent = money(player.bankPrincipal);
+    elements["asset-interest"].textContent = money(player.bankInterest);
+    elements["asset-interest-earned"].textContent = money(player.bankInterestEarned) + " / " + money(interestCap);
     elements["asset-properties-value"].textContent = money(propertyValueFor(state, player.id));
-    elements["asset-debt"].textContent = "0";
     elements["property-count"].textContent = owned.length + " 处";
     elements["property-list"].textContent = "";
     if (!owned.length) {
@@ -260,25 +336,31 @@
       row.className = "property-item";
       var text = document.createElement("div");
       var title = document.createElement("strong");
-      title.textContent = property.emoji + " " + property.name + " · Lv." + tile.level;
+      title.textContent = property.emoji + " " + tile.name + " · Lv." + tile.level;
       var detail = document.createElement("p");
-      detail.textContent = "出售可得 " + money(value) + " 快乐币";
+      var turnover = firstDefined(tile.currentTurnover, tile.turnover, tile.businessBalance, 0);
+      var collectible = firstDefined(tile.collectibleRevenue, Math.round(turnover * 0.5));
+      detail.textContent = "可领取 " + money(collectible) + " · 出售可得 " + money(value);
       text.append(title, detail);
       var button = document.createElement("button");
       button.type = "button";
       button.className = "property-action-button";
-      button.textContent = "出售";
-      button.disabled = busy || state.ended;
-      button.addEventListener("click", function () { sellProperty(tile.id, property.name, value); });
+      var canSellHere = currentPlayer(state).id === player.id && player.position === tile.index;
+      button.textContent = canSellHere ? "出售" : "需停留";
+      button.title = canSellHere ? "出售该地产" : "本人停在这处地产时才能主动出售";
+      button.disabled = busy || state.ended || !canSellHere;
+      button.addEventListener("click", function () { sellProperty(tile.id, tile.name, value); });
       row.append(text, button);
       elements["property-list"].appendChild(row);
     });
   }
 
   function renderCards(state, player) {
-    elements["hand-count"].textContent = player.hand.length + " / " + data.config.handLimit;
+    var hand = Array.isArray(player.hand) ? player.hand : [];
+    elements["hand-owner-name"].textContent = player.name + "的手牌";
+    elements["hand-count"].textContent = hand.length + " / " + data.config.handLimit;
     elements["card-list"].textContent = "";
-    if (!player.hand.length) {
+    if (!hand.length) {
       var empty = document.createElement("p");
       empty.className = "empty-copy";
       empty.textContent = "抽到的卡牌会放在这里。";
@@ -286,7 +368,8 @@
       return;
     }
     var available = engine ? engine.getAvailableActions().playableCards : [];
-    player.hand.forEach(function (cardId, handIndex) {
+    hand.forEach(function (cardEntry, handIndex) {
+      var cardId = typeof cardEntry === "string" ? cardEntry : cardEntry && cardEntry.id;
       var card = data.cards[cardId];
       if (!card) return;
       var row = document.createElement("article");
@@ -303,12 +386,46 @@
       var button = document.createElement("button");
       button.type = "button";
       button.className = "card-use-button";
-      button.textContent = "使用";
+      button.textContent = card.timing === "turn" ? "使用" : card.timing === "reaction" ? "待触发" : "自动";
       button.disabled = busy || !available.includes(cardId);
       button.addEventListener("click", function () { useCard(cardId, handIndex); });
       row.append(icon, text, button);
       elements["card-list"].appendChild(row);
     });
+  }
+
+  function renderActiveStatuses(player) {
+    var status = player.statuses || {};
+    var chips = [];
+    var hand = Array.isArray(player.hand) ? player.hand : [];
+    function cardCount(cardId) { return hand.filter(function (entry) { return (typeof entry === "string" ? entry : entry && entry.id) === cardId; }).length; }
+    if (status.skipTurns) chips.push(["暂停 ×" + status.skipTurns, "negative"]);
+    if (status.forcedConsumption) chips.push(["强制消费 ×" + status.forcedConsumption, "negative"]);
+    if (status.deliveryOrder) chips.push(["外卖免单 +100", "positive"]);
+    if (cardCount("consume")) chips.push(["消费卡待生效", "positive"]);
+    if (cardCount("fullHealth")) chips.push(["满血卡 ×" + cardCount("fullHealth"), "positive"]);
+    if (cardCount("immunity")) chips.push(["免惩卡 ×" + cardCount("immunity"), "positive"]);
+    if (cardCount("reflect")) chips.push(["反弹卡 ×" + cardCount("reflect"), "positive"]);
+    elements["active-status-list"].textContent = "";
+    if (!chips.length) chips.push(["状态正常", "clear"]);
+    chips.slice(0, 2).forEach(function (entry) {
+      var chip = document.createElement("span");
+      chip.className = "status-chip is-" + entry[1];
+      chip.textContent = entry[0];
+      elements["active-status-list"].appendChild(chip);
+    });
+  }
+
+  function playerAssetStatuses(player) {
+    var status = player.statuses || {};
+    var entries = [];
+    if (player.bankrupt) entries.push(["已破产", "negative"]);
+    if (status.skipTurns) entries.push(["暂停 ×" + status.skipTurns, "negative"]);
+    if (status.forcedConsumption) entries.push(["停在他人地产强制消费 ×" + status.forcedConsumption, "negative"]);
+    if (status.deliveryOrder) entries.push(["外卖免单并收入 100 待触发", "positive"]);
+    if (player.bankPendingPrincipal) entries.push(["新存本金 " + money(player.bankPendingPrincipal) + " 下次到访计息", "clear"]);
+    if (!entries.length) entries.push(["状态正常", "clear"]);
+    return entries;
   }
 
   function addLog(text, tone, playerId) {
@@ -340,40 +457,211 @@
     });
   }
 
+  function reasonLabel(reason) {
+    var labels = {
+      startLanding: "温暖小窝", startPassed: "温暖小窝", startReward: "温暖小窝",
+      safeReward: "休息时间", propertyConsumption: "地产消费", businessRevenue: "领取营收", cityInspection: "城管检查",
+      bankDeposit: "银行存款", bankWithdraw: "银行取现", bankEmergencyWithdrawal: "紧急提取利息",
+      collision: "撞人赔偿", collisionCompensation: "撞人赔偿", deliveryReward: "外卖收入",
+      gameMomentRefusal: "拒绝游戏", investmentCardWin: "投资卡", investmentCardLoss: "投资卡",
+      lotteryCard: "彩票卡", generousCard: "好人卡", charmingCard: "迷人卡",
+      yiminReview: "伊敏测评", maintenanceFee: "生活压力费", lifePressure: "生活压力费",
+      buyProperty: "购买地产", propertyPurchase: "购买地产", upgradeProperty: "升级地产",
+      propertyUpgrade: "升级地产", propertySale: "出售地产", forcedSale: "紧急出售地产",
+      collisionFee: "撞人赔偿"
+    };
+    if (reason && data.lifeEvents && data.lifeEvents[reason]) return data.lifeEvents[reason].name;
+    return labels[reason] || (reason ? String(reason).replace(/([A-Z])/g, " $1").trim() : "余额变化");
+  }
+
+  function eventTone(event) {
+    var card = event.cardId ? data.cards[event.cardId] : null;
+    if (card && ["cardDrawn", "cardAdded", "cardUsed", "cardDiscarded"].includes(event.type)) return card.category === "negative" ? "negative" : "positive";
+    if (event.type === "lifeEvent" && event.lifeEventId && data.lifeEvents[event.lifeEventId]) {
+      return ["fine", "randomFine", "percentFine", "skip"].includes(data.lifeEvents[event.lifeEventId].effect) ? "negative" : "positive";
+    }
+    if (event.type === "scratchCardResolved") return Number(event.amount) < 0 ? "negative" : "positive";
+    if (event.type === "gameMomentConfirmationResolved") return event.confirmed ? "positive" : "negative";
+    if (event.type === "moneyChanged") return Number(event.delta) < 0 ? "negative" : "positive";
+    if (["propertyBought", "propertyUpgraded", "businessRevenue", "startPassed", "startLanded", "reviewReward", "companionRescue", "bankInterestAccrued", "cardDrawn", "cardUsed", "deliveryCompleted", "bonusTurnGranted", "penaltyBlocked", "gameFailureBlocked"].includes(event.type)) return "positive";
+    if (["turnSkipped", "maintenanceFeeCharged", "playerBankrupt", "error", "cardDiscarded", "gameMomentRefused", "penaltyReflected", "gameFailureReflected", "skipAdded", "bankEmergencyWithdrawal"].includes(event.type)) return "negative";
+    return "neutral";
+  }
+
   function eventMessage(event, state) {
     var player = event.playerId ? getPlayer(state, event.playerId) : null;
     var owner = event.ownerId ? getPlayer(state, event.ownerId) : null;
     var tile = event.tileId ? state.board.find(function (item) { return item.id === event.tileId; }) : null;
     var card = event.cardId ? data.cards[event.cardId] : null;
+    var playerName = player ? player.name : "玩家";
+    var property = event.propertyId ? data.properties[event.propertyId] : tile && tile.propertyId ? data.properties[tile.propertyId] : null;
+    var propertyName = event.propertyName || event.newName || (tile ? tile.name : null) || (property ? property.name : "地产");
     switch (event.type) {
-      case "turnStarted": return player.name + " 开始行动";
-      case "turnSkipped": return player.name + " 暂停一回合";
-      case "diceRolled": return event.reason === "propertyConsumption" ? player.name + " 的消费骰是 " + event.value : player.name + " 掷出了 " + event.value;
-      case "startPassed": return player.name + " 经过温暖小窝，获得 " + money(event.amount);
-      case "propertyBought": return player.name + " 买下了 " + data.properties[event.propertyId].name;
-      case "propertyUpgraded": return data.properties[event.propertyId].name + " 升到 Lv." + event.level;
-      case "propertySold": return player.name + " 出售地产，获得 " + money(event.amount);
-      case "businessRevenue": return player.name + " 经过自己的 " + tile.name + "，收取营业流水 " + money(event.amount);
-      case "propertyConsumed": return player.name + " 在 " + owner.name + " 的 " + tile.name + " 消费了 " + money(event.amount);
-      case "consumptionWaived": return player.name + " 免除了 " + tile.name + " 的本次消费";
-      case "deliveryOrderReceived": return player.name + " 接到一张外卖单";
-      case "deliveryCompleted": return player.name + " 完成外卖配送，获得 100";
-      case "bankInterestAccrued": return player.name + " 的银行利息增加 " + money(event.amount);
-      case "bankDeposit": return player.name + " 存入银行 " + money(event.amount);
-      case "bankWithdraw": return player.name + " 从银行取出 " + money(event.amount);
-      case "cardDrawn": return player.name + " 抽到了 " + (card ? card.name : "一张卡");
-      case "cardUsed": return player.name + " 使用了 " + (card ? card.name : "卡牌");
-      case "lifeEvent": return player.name + " 遇到了「" + (event.name || (tile && tile.name) || "生活彩蛋") + "」";
-      case "cityInspection": return "城管检查来了，领先的店铺暂停营业";
-      case "reviewReward": return player.name + " 完成伊敏测评，获得 " + money(event.amount);
+      case "turnStarted": return playerName + " 开始行动";
+      case "turnSkipped": return playerName + " 暂停一回合";
+      case "diceRolled": return event.reason === "propertyConsumption" ? playerName + " 的消费骰是 " + event.value : playerName + " 掷出了 " + event.value;
+      case "startPassed": return Number(event.amount) > 0 ? playerName + " 停在温暖小窝，获得 " + money(event.amount) + " 快乐币" : null;
+      case "startLanded": return playerName + " 停在温暖小窝，获得 " + money(event.amount) + " 快乐币";
+      case "moneyChanged": return playerName + "因「" + reasonLabel(event.reason) + "」" + (Number(event.delta) >= 0 ? "获得 " : "扣除 ") + money(Math.abs(Number(event.delta) || 0)) + "，现有 " + money(event.balance);
+      case "propertyBought": return playerName + " 买下了「" + propertyName + "」，支付 " + money(firstDefined(event.amount, event.price)) + " 快乐币";
+      case "propertyUpgraded": return playerName + " 将「" + propertyName + "」升级到 Lv." + event.level + (firstDefined(event.amount, event.price) ? "，支付 " + money(firstDefined(event.amount, event.price)) : "");
+      case "propertySold": return playerName + " 出售「" + propertyName + "」，获得 " + money(event.amount);
+      case "propertySaleRejected": return playerName + " 需要停在「" + propertyName + "」才能主动出售";
+      case "businessRevenue": return playerName + " 停在自己的「" + propertyName + "」，领取营收 " + money(event.amount);
+      case "propertyConsumed": return playerName + " 在 " + (owner ? owner.name : "地主") + " 的「" + propertyName + "」消费了 " + money(event.amount);
+      case "consumptionWaived": return playerName + " 免除了「" + propertyName + "」的本次消费";
+      case "consumptionChecked": return event.consumed === false || event.triggered === false ? playerName + " 停在「" + propertyName + "」，本次没有产生消费" : null;
+      case "deliveryOrderReceived": return playerName + " 接到外卖单：下一次停在店铺可免单并赚 100";
+      case "deliveryCompleted": return playerName + " 完成外卖配送，获得 " + money(firstDefined(event.amount, 100));
+      case "bankInterestAccrued": return Number(event.amount) > 0 ? playerName + " 本次结息 " + money(event.amount) + "，待取利息共 " + money(firstDefined(event.totalInterest, event.interest)) : playerName + " 本次没有新增利息，累计已获 " + money(event.interestEarned) + " / " + money(firstDefined(event.interestCap, data.config.bankInterestCap));
+      case "bankDeposit": return playerName + " 存入银行 " + money(event.amount) + "，本金共 " + money(event.principal);
+      case "bankWithdraw": return playerName + " 从银行取出 " + money(event.amount);
+      case "bankEmergencyWithdrawal": return playerName + " 紧急提取银行利息 " + money(event.amount);
+      case "bankPrincipalMatured": return playerName + " 上次存入的 " + money(event.amount) + " 已开始参与计息";
+      case "bankNoAction": return playerName + " 本次停留银行未进行操作";
+      case "cardDrawn": return playerName + " 抽到了「" + (card ? card.name : "一张卡") + "」";
+      case "cardAdded": return null;
+      case "cardUsed": return playerName + " 使用了「" + (card ? card.name : "卡牌") + "」" + (event.targetId && getPlayer(state, event.targetId) ? "，目标是 " + getPlayer(state, event.targetId).name : "");
+      case "cardDiscarded": return playerName + " 的手牌已满，丢弃了「" + (card ? card.name : "一张卡") + "」";
+      case "scratchCardResolved": return playerName + " 刮开「" + (card ? card.name : "卡牌") + "」，" + (Number(event.amount) >= 0 ? "获得 " : "损失 ") + money(Math.abs(Number(event.amount) || 0)) + " 快乐币";
+      case "lifeEvent": return playerName + " 遇到了「" + (event.name || (tile && tile.name) || "生活彩蛋") + "」" + (event.text ? "：" + event.text : "");
+      case "idleMoment": return playerName + " 在发呆时刻放空了一会儿";
+      case "safeResolved": return playerName + " 在休息时间领取 300 快乐币，并暂停一回合";
+      case "adventure": return playerName + " 的冒险结果：" + ({ forward: "前进 3 格", consumeCard: "获得消费卡", back: "后退 2 格", fine: "罚款 100" }[event.outcome] || "特殊事件");
+      case "cityInspectionProperty": {
+        var inspectedOwner = getPlayer(state, event.ownerId);
+        return (inspectedOwner ? inspectedOwner.name : "地主") + " 的「" + propertyName + "」本期营业额 " + money(event.periodTurnover) +
+          "，管理费 " + money(event.expectedFee) + "（营业额扣 " + money(event.fromTurnover) + "，现金扣 " + money(event.fromCash) + "）";
+      }
+      case "cityInspection": return "城管检查完成，已按本检查周期营业额逐项结算管理费";
+      case "reviewReward": return playerName + " 完成伊敏测评，获得 " + money(event.amount);
+      case "collisionCompensated": return playerName + " 向 " + ((getPlayer(state, event.recipientId) || {}).name || "前一位玩家") + " 赔偿 " + money(event.amount);
+      case "collision": return playerName + " 与 " + ((getPlayer(state, event.otherPlayerId || event.recipientId) || {}).name || "前一位玩家") + " 相遇，" + ((event.action || event.choice) === "back" ? "选择后退 " + firstDefined(event.backSteps, 3) + " 格" : "赔偿 " + money(firstDefined(event.amount, event.compensation, event.fee)));
+      case "skipAdded": return playerName + " 增加 " + money(event.turns || 1) + " 次暂停";
+      case "penaltyBlocked": return playerName + " 使用免惩卡，抵消了 " + money(event.amount) + " 的罚款";
+      case "penaltyReflected": return playerName + " 将 " + money(event.amount) + " 的罚款反弹给了 " + ((getPlayer(state, event.targetId) || {}).name || "其他玩家");
+      case "gameFailureBlocked": return playerName + " 使用免惩卡，抵消小游戏失败惩罚";
+      case "gameFailureReflected": return playerName + " 将小游戏失败惩罚反弹给了 " + ((getPlayer(state, event.targetId) || {}).name || "其他玩家");
+      case "gameMomentStarted": return playerName + " 开始「" + ((data.gameMoments[event.gameMomentId] || {}).name || "游戏互动") + "」";
+      case "gameMomentCompleted": return playerName + " 完成了「" + ((data.gameMoments[event.gameMomentId] || {}).name || "游戏互动") + "」";
+      case "gameMomentConfirmationResolved": return event.confirmed
+        ? playerName + " 的任务已获得至少 3 人确认"
+        : playerName + " 的任务未通过确认" + (event.systemRoll ? "，系统骰为 " + event.systemRoll + " 点" : "");
+      case "gameMomentRefused": return playerName + " 拒绝游戏，扣除 " + money(event.amount) + "，接下来 3 次停在他人地产强制消费";
+      case "diceDuelRound": return "掷骰子对决：" + (event.rolls || []).map(function (entry) {
+        var roller = getPlayer(state, entry.playerId);
+        return (roller ? roller.name : "玩家") + " " + entry.value + " 点";
+      }).join("，");
+      case "rpsRound": {
+        var moveNames = { rock: "石头", paper: "布", scissors: "剪刀" };
+        var opponent = getPlayer(state, event.opponentId);
+        return playerName + " 出" + (moveNames[event.playerMove] || event.playerMove) + "，" + (opponent ? opponent.name : "对手") + " 出" + (moveNames[event.opponentMove] || event.opponentMove);
+      }
+      case "rpsResolved": {
+        var winner = getPlayer(state, event.winnerId);
+        var loser = getPlayer(state, event.loserId);
+        return "石头剪刀布结束，" + (winner ? winner.name : "胜方") + " 获胜，" + (loser ? loser.name : "败方") + " 后退 5 格";
+      }
+      case "bonusTurnGranted": return playerName + " 获得一次额外行动";
       case "companionRescue": return "伙伴护住了伊敏，这局还有转机";
-      case "maintenanceFeeIncreased": return "长期经营成本上涨，下一轮维护费为 " + money(event.nextFee);
-      case "maintenanceFeeCharged": return player.name + " 支付经营维护费 " + money(event.amount);
+      case "maintenanceFeeIncreased": return "生活压力上升，下一轮每名存活玩家需支付 " + money(event.nextFee);
+      case "maintenanceFeeCharged": return playerName + " 支付生活压力费 " + money(event.amount);
       case "playerBankrupt": return player.name + " 暂时告别了本局";
       case "gameEnded": return "本局结束，" + (getPlayer(state, event.winnerId) || {}).name + " 排在第一";
       case "error": return "结算遇到问题：" + event.message;
-      default: return null;
+      default:
+        if (event.message) return event.message;
+        if (/penalty|fee|charge/i.test(event.type) && event.amount !== undefined) return playerName + " 支付 " + money(event.amount) + " 快乐币";
+        if (/reward|income|revenue/i.test(event.type) && event.amount !== undefined) return playerName + " 获得 " + money(event.amount) + " 快乐币";
+        return null;
     }
+  }
+
+  function queueEventNotice(config) {
+    if (!config || !config.title) return;
+    if (eventNoticeQueue.length >= 4) eventNoticeQueue.shift();
+    eventNoticeQueue.push(config);
+    processEventNoticeQueue();
+  }
+
+  async function processEventNoticeQueue() {
+    if (eventNoticeActive || !eventNoticeQueue.length || !elements["event-result-region"]) return;
+    eventNoticeActive = true;
+    var config = eventNoticeQueue.shift();
+    var notice = document.createElement("article");
+    notice.className = "event-result-card is-" + (config.tone || "neutral") + (config.card ? " is-card-reveal" : "");
+    var icon = document.createElement("span");
+    icon.className = "event-result-icon";
+    icon.textContent = config.icon || (config.tone === "positive" ? "+" : config.tone === "negative" ? "−" : "·");
+    icon.setAttribute("aria-hidden", "true");
+    var copy = document.createElement("span");
+    copy.className = "event-result-copy";
+    var title = document.createElement("strong");
+    title.textContent = config.title;
+    var body = document.createElement("span");
+    body.textContent = config.body || "";
+    copy.append(title, body);
+    var close = document.createElement("button");
+    close.type = "button";
+    close.className = "event-result-close";
+    close.setAttribute("aria-label", "关闭提示");
+    close.textContent = "×";
+    notice.append(icon, copy, close);
+    elements["event-result-region"].replaceChildren(notice);
+    var dismissed = new Promise(function (resolve) { close.addEventListener("click", resolve, { once: true }); });
+    await Promise.race([wait(config.duration || (fastMode ? 900 : 2600)), dismissed]);
+    notice.classList.add("is-leaving");
+    await wait(180);
+    notice.remove();
+    eventNoticeActive = false;
+    processEventNoticeQueue();
+  }
+
+  function noticeForEvent(event, state, message, tone) {
+    var player = event.playerId ? getPlayer(state, event.playerId) : null;
+    var card = event.cardId ? data.cards[event.cardId] : null;
+    if (event.type === "cardDrawn") {
+      return { title: (player ? player.name + "抽到 " : "抽到 ") + (card ? card.name : "一张卡"), body: card ? card.text : message, icon: "◇", tone: tone, card: true, duration: 3800 };
+    }
+    if (event.type === "cardUsed") return { title: (card ? card.name : "卡牌") + "已生效", body: message, icon: "◇", tone: tone, card: true };
+    if (event.type === "cardDiscarded" && player && player.isHuman) return { title: "手牌已满", body: message, icon: "◇", tone: "negative", card: true, duration: 3200 };
+    if (event.type === "scratchCardResolved") return { title: event.result === "win" ? "刮奖成功" : "投资结果揭晓", body: message, icon: "◇", tone: tone, card: true, duration: 3400 };
+    if (event.type === "propertyBought") return { title: "地产购买成功", body: message, icon: "店", tone: tone };
+    if (event.type === "propertyUpgraded") return { title: "地产升级成功", body: message, icon: "↑", tone: tone };
+    if (event.type === "businessRevenue" && player && player.isHuman) return { title: "领取地产营收", body: message, icon: "+", tone: "positive" };
+    if (event.type === "propertyConsumed" && (player && player.isHuman || event.ownerId === "yimin")) return { title: "发生地产消费", body: message, icon: "¥", tone: player && player.isHuman ? "negative" : "positive" };
+    if (event.type === "consumptionChecked" && player && player.isHuman && (event.consumed === false || event.triggered === false)) return { title: "这次没有消费", body: message, icon: "·", tone: "neutral" };
+    if (event.type === "lifeEvent" && player && player.isHuman) return { title: event.name || "生活彩蛋", body: message, icon: "✦", tone: tone };
+    if (["bankInterestAccrued", "bankDeposit", "bankWithdraw", "bankEmergencyWithdrawal"].includes(event.type) && player && player.isHuman) {
+      return { title: event.type === "bankInterestAccrued" ? "银行结息" : event.type === "bankDeposit" ? "存款成功" : event.type === "bankWithdraw" ? "取现成功" : "紧急提取利息", body: message, icon: "¥", tone: event.type === "bankEmergencyWithdrawal" ? "negative" : "positive" };
+    }
+    if (event.type === "reviewReward" && player && player.isHuman) return { title: "伊敏测评奖励", body: message, icon: "★", tone: "positive" };
+    if (["deliveryOrderReceived", "deliveryCompleted"].includes(event.type) && player && player.isHuman) return { title: event.type === "deliveryCompleted" ? "外卖完成" : "接到外卖单", body: message, icon: "送", tone: "positive" };
+    if (["startLanded", "safeResolved", "adventure", "idleMoment", "skipAdded"].includes(event.type) && player && player.isHuman && !(event.type === "skipAdded" && ["safe", "fate"].includes(event.reason))) {
+      var eventTitles = { startLanded: "回到温暖小窝", safeResolved: "休息时间", adventure: "冒险结果", idleMoment: "发呆时刻", skipAdded: "暂停状态" };
+      return { title: eventTitles[event.type], body: message, icon: event.type === "skipAdded" ? "!" : "✦", tone: tone };
+    }
+    if (["diceDuelRound", "rpsResolved"].includes(event.type) && player && player.isHuman) return { title: event.type === "diceDuelRound" ? "掷骰子对决" : "猜拳结果", body: message, icon: "★", tone: "neutral", duration: 3400 };
+    if (event.type === "gameMomentConfirmationResolved" && player && player.isHuman) return { title: event.confirmed ? "任务确认通过" : "任务确认未通过", body: message, icon: event.confirmed ? "✓" : "!", tone: event.confirmed ? "positive" : "negative" };
+    if (event.type === "moneyChanged" && player && player.isHuman && Number(event.delta) < 0 && !["buyProperty", "propertyPurchase", "upgradeProperty", "propertyUpgrade", "bankDeposit", "propertyConsumption", "collisionFee"].includes(event.reason)) {
+      return { title: "快乐币扣除", body: message, icon: "−", tone: "negative" };
+    }
+    if (["playerBankrupt", "gameEnded", "companionRescue", "cityInspection"].includes(event.type)) return { title: event.type === "gameEnded" ? "本局结束" : event.type === "playerBankrupt" ? "玩家破产" : event.type === "cityInspection" ? "城管检查" : "伙伴救援", body: message, icon: "!", tone: tone, duration: 3400 };
+    return null;
+  }
+
+  function showMoneyFeedback(event, state) {
+    var delta = Number(event.delta) || 0;
+    if (!delta) return;
+    var player = getPlayer(state, event.playerId);
+    var label = (delta > 0 ? "+" : "−") + money(Math.abs(delta));
+    var pop = document.createElement("span");
+    pop.className = "money-pop is-" + (delta > 0 ? "positive" : "negative");
+    pop.textContent = label;
+    var target = elements["player-list"].querySelector('[data-player-id="' + event.playerId + '"]');
+    (target || elements["money-feedback-region"]).appendChild(pop);
+    elements["screen-reader-status"].textContent = (player ? player.name : "玩家") + "快乐币" + label;
+    window.setTimeout(function () { pop.remove(); }, 1300);
   }
 
   async function onEngineEvent(event, state) {
@@ -383,11 +671,13 @@
       playTone(500 + event.value * 45, 0.05);
     }
     render(state);
+    if (event.type === "moneyChanged") showMoneyFeedback(event, state);
     var message = eventMessage(event, state);
     if (message) {
-      var tone = ["propertyBought", "businessRevenue", "startPassed", "reviewReward", "companionRescue"].includes(event.type) ? "positive" : ["turnSkipped", "maintenanceFeeCharged", "playerBankrupt", "error"].includes(event.type) ? "negative" : "neutral";
+      var tone = eventTone(event);
       addLog(message, tone, event.playerId);
-      if (["propertyBought", "propertyConsumed", "companionRescue", "maintenanceFeeIncreased", "gameEnded"].includes(event.type)) toast(message, tone);
+      var notice = noticeForEvent(event, state, message, tone);
+      if (notice) queueEventNotice(notice);
     }
     maybeCompanionLine(event, state);
     if (event.type === "gameEnded") {
@@ -399,6 +689,7 @@
   }
 
   function maybeCompanionLine(event, state) {
+    if (state.settings && state.settings.careMode === false) return;
     if (!["propertyBought", "businessRevenue", "propertyConsumed", "companionRescue"].includes(event.type)) return;
     if (Math.random() > 0.35 && event.type !== "companionRescue") return;
     var currentTurn = Number(state.globalTurn) || 0;
@@ -467,9 +758,7 @@
     if (!player.isHuman && request.type !== "rescue") return undefined;
     var property = request.propertyId ? data.properties[request.propertyId] : null;
     if (request.type === "safeReward") {
-      return modalChoice({ icon: "♥", title: "休息一下", body: "领取 300 快乐币，还是抽一张卡？", actions: [
-        { label: "领取 300", value: "money" }, { label: "抽一张卡", value: "card", variant: "secondary" }
-      ] });
+      return "money";
     }
     if (request.type === "buyProperty") {
       return modalChoice({ icon: property.emoji, title: "买下「" + property.name + "」", body: "标价 " + money(request.price) + "，购买后还剩 " + money(request.balance - request.price) + " 快乐币。", actions: [
@@ -477,15 +766,18 @@
       ] });
     }
     if (request.type === "upgradeProperty") {
-      return modalChoice({ icon: property.emoji, title: "升级「" + property.name + "」", body: "花费 " + money(request.price) + "，从 Lv." + request.level + " 升到 Lv." + request.nextLevel + "。", actions: [
+      var nextPropertyName = property.levelNames && property.levelNames[request.nextLevel - 1] || property.name;
+      return modalChoice({ icon: property.emoji, title: "升级为「" + nextPropertyName + "」", body: "花费 " + money(request.price) + "，从 Lv." + request.level + " 升到 Lv." + request.nextLevel + "。", actions: [
         { label: "立即升级", value: "upgrade" }, { label: "保留现金", value: "skip", variant: "secondary" }
       ] });
     }
     if (request.type === "collision") {
       var other = getPlayer(state, request.otherPlayerId);
-      return modalChoice({ icon: "!", title: "和 " + other.name + " 撞到一起", body: "支付 100 快乐币，或者后退 2 格并继续结算。", actions: [
-        { label: "支付 100", value: "pay" }, { label: "后退 2 格", value: "back", variant: "secondary" }
-      ] });
+      var collisionFee = firstDefined(request.amount, request.compensation, request.fee, 100);
+      var backSteps = firstDefined(request.backSteps, request.steps, 3);
+      var collisionActions = [{ label: "赔偿 " + money(collisionFee), value: "pay" }];
+      if (!request.mandatory) collisionActions.push({ label: "后退 " + backSteps + " 格", value: "back", variant: "secondary" });
+      return modalChoice({ icon: "!", title: "和 " + (other ? other.name : "前一位玩家") + " 撞到一起", body: request.mandatory ? "本次为强制赔偿。" : "可以赔偿，也可以选择后退。", actions: collisionActions });
     }
     if (request.type === "bank") return bankChoice(request);
     if (request.type === "skipRecovery") {
@@ -496,6 +788,12 @@
     if (request.type === "gameMoment" && request.gameMomentId === "rps") {
       return modalChoice({ icon: "✂", title: "石头剪刀布", body: "选好以后同时揭晓。", actions: [
         { label: "石头", value: { move: "rock" } }, { label: "剪刀", value: { move: "scissors" }, variant: "secondary" }, { label: "布", value: { move: "paper" }, variant: "secondary" }
+      ] });
+    }
+    if (request.type === "scratchCard") {
+      var scratchCard = data.cards[request.cardId];
+      return modalChoice({ icon: "◇", kicker: scratchCard ? scratchCard.name : "刮奖时刻", title: request.cardId === "investment" ? "揭晓投资结果" : "刮开幸运奖券", body: "点击后立即揭晓结果。", actions: [
+        { label: "现在刮开", value: "reveal" }
       ] });
     }
     if (request.type === "gameMoment") {
@@ -539,8 +837,33 @@
   }
 
   function bankChoice(request) {
+    var state = engine ? engine.getState() : null;
+    var player = state ? getPlayer(state, request.playerId) : null;
+    var interestRate = Number(firstDefined(request.interestRate, data.config.bankInterestRate, 0.05));
+    var interestCap = Number(firstDefined(request.interestCap, data.config.bankInterestCap, 2000));
+    var cumulativeInterest = Number(firstDefined(request.cumulativeInterest, request.interestEarned, player && player.bankInterestEarned, 0));
+    var nextBase = Number(firstDefined(request.nextInterestBase, Number(request.principal || 0) + Number(request.interest || 0)));
+    var settleInterest = Number(firstDefined(request.nextInterest, Math.min(Math.max(0, interestCap - cumulativeInterest), Math.round(nextBase * interestRate))));
+    var options = Array.isArray(request.options) ? request.options : ["deposit", "withdraw", "none"];
     var wrap = document.createElement("div");
     wrap.className = "modal-form";
+    var overview = document.createElement("dl");
+    overview.className = "bank-overview";
+    [
+      ["现金", money(request.balance)],
+      ["银行本金", money(request.principal)],
+      ["待取利息", money(request.interest)],
+      ["累计已获利息", money(cumulativeInterest) + " / " + money(interestCap)],
+      ["本次可结利息", "+" + money(settleInterest)]
+    ].forEach(function (entry) {
+      var row = document.createElement("div");
+      var term = document.createElement("dt");
+      var value = document.createElement("dd");
+      term.textContent = entry[0];
+      value.textContent = entry[1];
+      row.append(term, value);
+      overview.appendChild(row);
+    });
     var label = document.createElement("label");
     label.textContent = "金额（100 的倍数）";
     var input = document.createElement("input");
@@ -549,7 +872,7 @@
     input.step = "100";
     input.value = String(Math.min(500, request.balance || request.principal + request.interest || 0));
     label.appendChild(input);
-    wrap.appendChild(label);
+    wrap.append(overview, label);
     return new Promise(function (resolve) {
       currentModalResolve = resolve;
       elements["modal-icon"].textContent = "¥";
@@ -557,20 +880,21 @@
       elements["modal-title"].textContent = "存取快乐币";
       elements["modal-body"].textContent = "";
       var info = document.createElement("p");
-      info.textContent = "现金 " + money(request.balance) + " · 本金 " + money(request.principal) + " · 利息 " + money(request.interest);
+      info.textContent = "只有停在世界银行才能操作；本次新存入的金额从下次停留开始计息。";
       elements["modal-body"].append(info, wrap);
       elements["modal-actions"].textContent = "";
-      [
-        { label: "存入", action: "deposit" },
-        { label: "取出", action: "withdraw", variant: "secondary" },
-        { label: "暂不操作", action: "none", variant: "secondary" }
-      ].forEach(function (choice) {
+      var choices = [];
+      if (options.includes("deposit")) choices.push({ label: "存入", action: "deposit" });
+      if (options.includes("withdraw")) choices.push({ label: "取出", action: "withdraw", variant: "secondary" });
+      if (options.includes("settle")) choices.push({ label: "结算利息", action: "settle", amount: 0, variant: "secondary" });
+      choices.push({ label: "暂不操作", action: "none", amount: 0, variant: "secondary" });
+      choices.forEach(function (choice) {
         var button = document.createElement("button");
         button.type = "button";
         button.textContent = choice.label;
         if (choice.variant) button.dataset.variant = choice.variant;
         button.addEventListener("click", function () {
-          closeModal({ action: choice.action, amount: choice.action === "none" ? 0 : Math.max(0, Math.floor(Number(input.value) / 100) * 100) });
+          closeModal({ action: choice.action, amount: choice.amount === 0 || choice.action === "none" ? 0 : Math.max(0, Math.floor(Number(input.value) / 100) * 100) });
         });
         elements["modal-actions"].appendChild(button);
       });
@@ -683,6 +1007,127 @@
     return value === "easy" ? "轻松" : value === "hard" ? "聪明" : "普通";
   }
 
+  function buildPlayerAssetView(state, player) {
+    var wrap = document.createElement("div");
+    wrap.className = "player-asset-inspector";
+    var overview = document.createElement("dl");
+    overview.className = "asset-summary asset-summary-modal";
+    [
+      ["现金", money(player.money)],
+      ["银行本金", money(player.bankPrincipal)],
+      ["待取利息", money(player.bankInterest)],
+      ["累计利息", money(player.bankInterestEarned)],
+      ["地产估值", money(propertyValueFor(state, player.id))],
+      ["待领营收", money(collectibleRevenueFor(state, player.id))],
+      ["总资产", money(netWorthFor(state, player))]
+    ].forEach(function (entry) {
+      var row = document.createElement("div");
+      var term = document.createElement("dt");
+      var value = document.createElement("dd");
+      term.textContent = entry[0];
+      value.textContent = entry[1];
+      row.append(term, value);
+      overview.appendChild(row);
+    });
+    wrap.appendChild(overview);
+
+    var statusHeading = document.createElement("h3");
+    statusHeading.textContent = "当前状态";
+    wrap.appendChild(statusHeading);
+    var statusList = document.createElement("div");
+    statusList.className = "asset-inspector-status-list";
+    playerAssetStatuses(player).forEach(function (entry) {
+      var chip = document.createElement("span");
+      chip.className = "status-chip is-" + entry[1];
+      chip.textContent = entry[0];
+      statusList.appendChild(chip);
+    });
+    wrap.appendChild(statusList);
+
+    var owned = state.board.filter(function (tile) { return tile.ownerId === player.id; });
+    var heading = document.createElement("h3");
+    heading.textContent = "地产 " + owned.length + " 处";
+    wrap.appendChild(heading);
+    var list = document.createElement("div");
+    list.className = "asset-inspector-list";
+    if (!owned.length) {
+      var empty = document.createElement("p");
+      empty.className = "empty-copy";
+      empty.textContent = "还没有地产。";
+      list.appendChild(empty);
+    } else {
+      owned.forEach(function (tile) {
+        var property = data.properties[tile.propertyId] || {};
+        var tier = data.propertyTiers[property.tier || tile.propertyId] || {};
+        var level = Math.max(1, Number(tile.level) || 1);
+        var row = document.createElement("div");
+        row.className = "asset-inspector-property";
+        var header = document.createElement("div");
+        header.className = "asset-inspector-property-header";
+        var name = document.createElement("strong");
+        var turnover = firstDefined(tile.currentTurnover, tile.turnover, tile.businessBalance, 0);
+        name.textContent = (property.emoji || "店") + " " + (tile.name || property.name) + " · Lv." + level;
+        var levelState = document.createElement("span");
+        levelState.textContent = level >= 4 ? "已满级" : "可升级";
+        header.append(name, levelState);
+
+        var nextUpgrade = level < 4 && Array.isArray(tier.upgradeCosts)
+          ? money(tier.upgradeCosts[level - 1])
+          : "已满级";
+        var consumeAmount = Array.isArray(tier.consume) ? tier.consume[level - 1] : 0;
+        var metrics = [
+          ["购买价", money(tier.buyPrice)],
+          ["下级升级价", nextUpgrade],
+          ["当前级消费额", money(consumeAmount)],
+          ["当前营业额", money(turnover)],
+          ["检查周期营业额", money(tile.inspectionTurnover)],
+          ["全局累计营业额", money(tile.lifetimeTurnover)],
+          ["当前可领取营收", money(Math.round(turnover * 0.5))]
+        ];
+        var metricList = document.createElement("dl");
+        metricList.className = "property-inspector-metrics";
+        metrics.forEach(function (entry) {
+          var metric = document.createElement("div");
+          var term = document.createElement("dt");
+          var value = document.createElement("dd");
+          term.textContent = entry[0];
+          value.textContent = entry[1];
+          metric.append(term, value);
+          metricList.appendChild(metric);
+        });
+        row.append(header, metricList);
+        list.appendChild(row);
+      });
+    }
+    wrap.appendChild(list);
+
+    var hand = Array.isArray(player.hand) ? player.hand : [];
+    var cards = document.createElement("p");
+    cards.className = "asset-inspector-cards";
+    cards.textContent = "手牌 " + hand.length + " / " + data.config.handLimit + (hand.length ? "：" + hand.map(function (entry) {
+      var cardId = typeof entry === "string" ? entry : entry && entry.id;
+      return data.cards[cardId] ? data.cards[cardId].name : "未知卡牌";
+    }).join("、") : "");
+    wrap.appendChild(cards);
+    return wrap;
+  }
+
+  async function openPlayerAssets(playerId) {
+    if (!engine || currentModalResolve) return;
+    if (busy) {
+      toast("这步结算完成后就能查看资产", "neutral");
+      return;
+    }
+    var state = engine.getState();
+    var player = getPlayer(state, playerId);
+    if (!player) return;
+    await modalChoice({
+      icon: player.avatar, kicker: player.isHuman ? "我的资产" : "伙伴资产",
+      title: player.name, body: player.bankrupt ? "本局已破产，以下是离场前的最终状态。" : "资产只读查看",
+      extra: buildPlayerAssetView(state, player), actions: [{ label: "关闭", value: "close", variant: "secondary" }]
+    });
+  }
+
   function formatHistoryTime(value) {
     var date = new Date(value);
     if (Number.isNaN(date.getTime())) return "时间未记录";
@@ -725,7 +1170,7 @@
       meta.className = "match-history-meta";
       [
         ["难度", difficultyLabel(record.difficulty)],
-        ["陪玩", record.careMode ? "开启" : "关闭"],
+        ["鼓励", record.careMode ? "开启" : "关闭"],
         ["伊敏资产", money(record.yiminNetWorth)]
       ].forEach(function (item) {
         var cell = document.createElement("span");
@@ -796,7 +1241,11 @@
 
   function readSetup() {
     var difficulty = document.querySelector('input[name="difficulty"]:checked');
-    return { difficulty: difficulty ? difficulty.value : "normal", careMode: elements["care-mode-toggle"].checked };
+    var playerNames = data.players.map(function (preset) {
+      var input = document.querySelector('[data-player-name="' + preset.id + '"]');
+      return String(input && input.value || preset.name).trim().slice(0, 12) || preset.name;
+    });
+    return { difficulty: difficulty ? difficulty.value : "normal", careMode: elements["care-mode-toggle"].checked, playerNames: playerNames };
   }
 
   function migrateSave(serialized) {
@@ -822,11 +1271,17 @@
     busy = true;
     createEngine();
     var setup = readSetup();
-    engine.newGame({ seed: Date.now(), playerName: "伊敏", difficulty: setup.difficulty, careMode: setup.careMode });
+    engine.newGame({ seed: Date.now(), playerName: setup.playerNames[0], playerNames: setup.playerNames, difficulty: setup.difficulty, careMode: setup.careMode });
+    if (engine.state && Array.isArray(engine.state.players)) {
+      engine.state.players.forEach(function (player, index) { player.name = setup.playerNames[index] || player.name; });
+    }
     uiLog = [];
+    eventNoticeQueue = [];
+    eventNoticeActive = false;
+    elements["event-result-region"].textContent = "";
     lastDialogueTurnByPlayer = {};
     elements["start-screen"].hidden = true;
-    addLog("伊敏和三位伙伴出发啦", "positive", "yimin");
+    addLog(setup.playerNames[0] + "和三位伙伴出发啦", "positive", "yimin");
     render(engine.getState());
     saveGame();
     busy = false;
@@ -968,22 +1423,33 @@
     });
   }
 
-  function setupTabs() {
+  function activatePanelTab(buttonId, openPanel) {
     var tabs = [
       { button: elements["tab-events"], panel: elements["event-log"] },
       { button: elements["tab-cards"], panel: elements["card-panel"] },
       { button: elements["tab-assets"], panel: elements["asset-panel"] }
     ];
+    var selected = tabs.find(function (tab) { return tab.button.id === buttonId; }) || tabs[0];
+    tabs.forEach(function (candidate) {
+      var active = candidate === selected;
+      candidate.button.classList.toggle("is-active", active);
+      candidate.button.setAttribute("aria-selected", String(active));
+      candidate.panel.classList.toggle("is-active", active);
+      candidate.panel.hidden = !active;
+    });
+    elements["quick-cards-button"].setAttribute("aria-expanded", String(Boolean(openPanel && selected.button.id === "tab-cards")));
+    if (openPanel) {
+      elements["side-panel"].classList.add("is-open");
+      elements["panel-toggle"].setAttribute("aria-expanded", "true");
+      var label = elements["panel-toggle"].querySelector(".visually-hidden");
+      if (label) label.textContent = "收起游戏信息";
+    }
+  }
+
+  function setupTabs() {
+    var tabs = [elements["tab-events"], elements["tab-cards"], elements["tab-assets"]];
     tabs.forEach(function (tab) {
-      tab.button.addEventListener("click", function () {
-        tabs.forEach(function (candidate) {
-          var active = candidate === tab;
-          candidate.button.classList.toggle("is-active", active);
-          candidate.button.setAttribute("aria-selected", String(active));
-          candidate.panel.classList.toggle("is-active", active);
-          candidate.panel.hidden = !active;
-        });
-      });
+      tab.addEventListener("click", function () { activatePanelTab(tab.id, true); });
     });
   }
 
@@ -992,6 +1458,10 @@
     elements["continue-game-button"].addEventListener("click", continueGame);
     elements["history-button"].addEventListener("click", showMatchHistory);
     elements["roll-button"].addEventListener("click", playHumanTurn);
+    elements["quick-cards-button"].addEventListener("click", function () { activatePanelTab("tab-cards", true); });
+    document.querySelectorAll("[data-player-name]").forEach(function (input) {
+      input.addEventListener("change", savePreferences);
+    });
     elements["speed-toggle"].addEventListener("change", function () { fastMode = this.checked; savePreferences(); });
     elements["sound-toggle"].addEventListener("click", function () {
       soundEnabled = !soundEnabled;
@@ -1011,6 +1481,7 @@
       var open = !elements["side-panel"].classList.contains("is-open");
       elements["side-panel"].classList.toggle("is-open", open);
       this.setAttribute("aria-expanded", String(open));
+      elements["quick-cards-button"].setAttribute("aria-expanded", String(open && !elements["card-panel"].hidden));
       var label = this.querySelector(".visually-hidden");
       if (label) label.textContent = open ? "收起游戏信息" : "展开游戏信息";
     });
@@ -1027,7 +1498,9 @@
   }
 
   function savePreferences() {
-    try { localStorage.setItem(PREF_KEY, JSON.stringify({ fastMode: fastMode, soundEnabled: soundEnabled })); } catch (_) { /* optional */ }
+    var names = {};
+    document.querySelectorAll("[data-player-name]").forEach(function (input) { names[input.dataset.playerName] = input.value; });
+    try { localStorage.setItem(PREF_KEY, JSON.stringify({ fastMode: fastMode, soundEnabled: soundEnabled, playerNames: names })); } catch (_) { /* optional */ }
   }
 
   function loadPreferences() {
@@ -1035,6 +1508,9 @@
       var prefs = JSON.parse(localStorage.getItem(PREF_KEY) || "{}");
       fastMode = Boolean(prefs.fastMode);
       soundEnabled = prefs.soundEnabled !== false;
+      if (prefs.playerNames) document.querySelectorAll("[data-player-name]").forEach(function (input) {
+        if (prefs.playerNames[input.dataset.playerName]) input.value = prefs.playerNames[input.dataset.playerName];
+      });
     } catch (_) { fastMode = false; soundEnabled = true; }
     elements["speed-toggle"].checked = fastMode;
     elements["sound-toggle"].setAttribute("aria-pressed", String(!soundEnabled));

@@ -9,8 +9,8 @@
   <meta name="description" content="为伊敏定制的轻松大富翁陪玩游戏">
   <title>伊敏大冒险</title>
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="styles.css?v=38">
-  <link rel="stylesheet" href="styles-redesign.css?v=38">
+  <link rel="stylesheet" href="styles.css?v=42">
+  <link rel="stylesheet" href="styles-redesign.css?v=42">
 </head>
 <body>
   <a class="skip-link" href="#roll-button">跳到掷骰子</a>
@@ -89,6 +89,17 @@
                 </button>
               </div>
 
+              <div class="island-quickbar" aria-label="当前手牌与状态">
+                <button id="quick-cards-button" class="quick-cards-button" type="button" aria-controls="card-panel" aria-expanded="false">
+                  <span aria-hidden="true">◇</span>
+                  <span>手牌</span>
+                  <strong id="quick-card-count">0 / 5</strong>
+                </button>
+                <div id="active-status-list" class="active-status-list" aria-live="polite">
+                  <span class="status-chip is-clear">状态正常</span>
+                </div>
+              </div>
+
               <div class="island-stats" aria-label="伊敏的即时状态">
                 <div>
                   <span>快乐币</span>
@@ -107,6 +118,8 @@
           </div>
 
           <p id="board-announcement" class="board-announcement" aria-live="assertive"></p>
+          <div id="event-result-region" class="event-result-region" aria-live="polite" aria-atomic="true"></div>
+          <div id="money-feedback-region" class="money-feedback-region" aria-hidden="true"></div>
         </section>
 
         <aside id="side-panel" class="side-panel" aria-labelledby="side-panel-title">
@@ -125,7 +138,9 @@
 
           <div class="panel-tabs" role="tablist" aria-label="游戏信息">
             <button id="tab-events" class="panel-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="event-log">动态</button>
-            <button id="tab-cards" class="panel-tab" type="button" role="tab" aria-selected="false" aria-controls="card-panel">卡牌</button>
+            <button id="tab-cards" class="panel-tab" type="button" role="tab" aria-selected="false" aria-controls="card-panel">
+              <span>卡牌</span><strong id="tab-card-count" class="tab-count">0 / 5</strong>
+            </button>
             <button id="tab-assets" class="panel-tab" type="button" role="tab" aria-selected="false" aria-controls="asset-panel">资产</button>
           </div>
 
@@ -141,7 +156,7 @@
 
             <section id="card-panel" class="tab-panel" role="tabpanel" aria-labelledby="tab-cards" hidden>
               <div class="panel-summary">
-                <span>伊敏的手牌</span>
+                <span id="hand-owner-name">伊敏的手牌</span>
                 <strong id="hand-count">0 / 5</strong>
               </div>
               <div id="card-list" class="card-list">
@@ -150,11 +165,16 @@
             </section>
 
             <section id="asset-panel" class="tab-panel" role="tabpanel" aria-labelledby="tab-assets" hidden>
+              <div class="panel-summary asset-owner-heading">
+                <span id="asset-owner-name">伊敏的资产</span>
+                <strong id="asset-net-worth">2,000</strong>
+              </div>
               <dl class="asset-summary">
                 <div><dt>现金</dt><dd id="asset-cash">2,000</dd></div>
-                <div><dt>银行存款</dt><dd id="asset-deposit">0</dd></div>
+                <div><dt>银行本金</dt><dd id="asset-deposit">0</dd></div>
+                <div><dt>待取利息</dt><dd id="asset-interest">0</dd></div>
+                <div><dt>累计利息</dt><dd id="asset-interest-earned">0 / 2,000</dd></div>
                 <div><dt>地产估值</dt><dd id="asset-properties-value">0</dd></div>
-                <div><dt>待还贷款</dt><dd id="asset-debt">0</dd></div>
               </dl>
               <div class="property-heading">
                 <h3>我的经营项目</h3>
@@ -176,6 +196,16 @@
         <h2 id="start-title">伊敏大冒险</h2>
         <p class="start-description">带上三位性格不同的 AI 旅伴，沿着生活地图经营小店，收集只属于这一局的惊喜。</p>
 
+        <fieldset class="setup-group name-setup-group">
+          <legend>这局怎么称呼大家</legend>
+          <div class="player-name-grid">
+            <label><span>你</span><input data-player-name="yimin" type="text" value="伊敏" maxlength="12" autocomplete="nickname"></label>
+            <label><span>AI 1</span><input data-player-name="guoguo" type="text" value="果果" maxlength="12"></label>
+            <label><span>AI 2</span><input data-player-name="kuku" type="text" value="酷酷" maxlength="12"></label>
+            <label><span>AI 3</span><input data-player-name="tiantian" type="text" value="甜甜" maxlength="12"></label>
+          </div>
+        </fieldset>
+
         <fieldset class="setup-group">
           <legend>AI 难度</legend>
           <div class="segmented-control">
@@ -187,8 +217,8 @@
 
         <label class="care-option" for="care-mode-toggle">
           <span class="care-copy">
-            <strong>伊敏特别关照</strong>
-            <small>AI 会在最需要时送上一点帮助</small>
+            <strong>伙伴暖心鼓励</strong>
+            <small>AI 会在关键事件后说几句陪伴台词</small>
           </span>
           <input id="care-mode-toggle" type="checkbox" role="switch" checked>
           <span class="switch-track" aria-hidden="true"><span></span></span>
@@ -240,8 +270,8 @@
     </li>
   </template>
 
-  <script src="src/game-data.js?v=38"></script>
-  <script src="src/game-engine.js?v=38"></script>
-  <script src="src/app.js?v=38"></script>
+  <script src="src/game-data.js?v=42"></script>
+  <script src="src/game-engine.js?v=42"></script>
+  <script src="src/app.js?v=42"></script>
 </body>
 </html>

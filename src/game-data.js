@@ -2,54 +2,84 @@
   "use strict";
 
   var propertyTiers = {
-    low: {
-      id: "low",
-      name: "轻松小店",
-      buyPrice: 500,
-      upgradeCosts: [200, 400, 600],
-      consume: [100, 200, 300, 450],
-      revenue: [280, 420, 600, 850]
-    },
-    mid: {
-      id: "mid",
-      name: "人气店铺",
-      buyPrice: 800,
-      upgradeCosts: [400, 600, 900],
-      consume: [200, 350, 500, 700],
-      revenue: [410, 650, 950, 1350]
-    },
-    high: {
-      id: "high",
-      name: "梦想产业",
-      buyPrice: 1200,
-      upgradeCosts: [500, 900, 1300],
-      consume: [300, 450, 650, 850],
-      revenue: [620, 1000, 1450, 2100]
-    }
+    milkTea: { id: "milkTea", name: "奶茶系列", buyPrice: 800, upgradeCosts: [450, 700, 1000], consume: [200, 350, 550, 850] },
+    fruit: { id: "fruit", name: "水果", buyPrice: 850, upgradeCosts: [500, 750, 1050], consume: [220, 380, 600, 900] },
+    snack: { id: "snack", name: "小吃", buyPrice: 900, upgradeCosts: [500, 800, 1100], consume: [240, 410, 650, 980] },
+    dessert: { id: "dessert", name: "甜品", buyPrice: 950, upgradeCosts: [550, 850, 1200], consume: [260, 450, 700, 1050] },
+    bookstore: { id: "bookstore", name: "书店", buyPrice: 1000, upgradeCosts: [600, 900, 1250], consume: [280, 480, 750, 1150] },
+    pet: { id: "pet", name: "宠物", buyPrice: 1100, upgradeCosts: [650, 1000, 1350], consume: [320, 530, 820, 1250] },
+    cinema: { id: "cinema", name: "影院", buyPrice: 1200, upgradeCosts: [700, 1100, 1500], consume: [360, 590, 900, 1350] },
+    wellness: { id: "wellness", name: "养生", buyPrice: 1300, upgradeCosts: [750, 1200, 1650], consume: [400, 650, 1000, 1500] },
+    lodging: { id: "lodging", name: "住宿", buyPrice: 1400, upgradeCosts: [800, 1300, 1800], consume: [440, 720, 1100, 1650] },
+    mall: { id: "mall", name: "商场", buyPrice: 1500, upgradeCosts: [850, 1400, 1950], consume: [480, 790, 1200, 1800] }
   };
 
   var properties = {
-    milkTea: { id: "milkTea", name: "奶茶铺", tier: "low", emoji: "🥤" },
-    bookstore: { id: "bookstore", name: "治愈书店", tier: "mid", emoji: "📚" },
-    snack: { id: "snack", name: "快乐小吃摊", tier: "low", emoji: "🍢" },
-    wellness: { id: "wellness", name: "养生馆", tier: "high", emoji: "🍵" },
-    dessert: { id: "dessert", name: "甜品屋", tier: "low", emoji: "🍰" },
-    pet: { id: "pet", name: "宠物乐园", tier: "mid", emoji: "🐾" },
-    fruit: { id: "fruit", name: "鲜果铺", tier: "low", emoji: "🍓" },
-    lodging: { id: "lodging", name: "云朵民宿", tier: "high", emoji: "🏡" },
-    cinema: { id: "cinema", name: "星光影院", tier: "mid", emoji: "🎬" },
-    mall: { id: "mall", name: "梦想商场", tier: "high", emoji: "🛍️" }
+    milkTea: {
+      id: "milkTea", name: "推车奶茶", seriesName: "奶茶系列", tier: "milkTea", emoji: "🥤",
+      levelNames: ["推车奶茶", "奶茶小店", "连锁奶茶", "知名奶茶"],
+      flavor: "买了杯 QQ 捏捏好吃到咩扑茶，付款 {amount} 快乐币。"
+    },
+    bookstore: {
+      id: "bookstore", name: "街角书摊", seriesName: "书店", tier: "bookstore", emoji: "📚",
+      levelNames: ["街角书摊", "独立书店", "连锁书吧", "市图书馆"],
+      flavor: "买了本小说，付款 {amount} 快乐币。"
+    },
+    snack: {
+      id: "snack", name: "夜市小摊", seriesName: "小吃", tier: "snack", emoji: "🍢",
+      levelNames: ["夜市小摊", "苍蝇馆子", "美食连锁", "米其林"],
+      flavor: "买了份蒜香排骨，付款 {amount} 快乐币。"
+    },
+    wellness: {
+      id: "wellness", name: "按摩店", seriesName: "养生", tier: "wellness", emoji: "🍵",
+      levelNames: ["按摩店", "温泉汤池", "高端会所", "康养圣地"],
+      flavor: "体验了一次精油 spa，付款 {amount} 快乐币。"
+    },
+    dessert: {
+      id: "dessert", name: "手作甜品", seriesName: "甜品", tier: "dessert", emoji: "🍰",
+      levelNames: ["手作甜品", "网红甜品", "连锁烘焙", "超级糖果"],
+      flavor: "买了份定制小蛋糕，付款 {amount} 快乐币。"
+    },
+    pet: {
+      id: "pet", name: "流浪猫窝", seriesName: "宠物", tier: "pet", emoji: "🐾",
+      levelNames: ["流浪猫窝", "宠物小店", "萌宠乐园", "动物世界"],
+      flavor: "与宠物共度美好时光，门票 {amount} 快乐币。"
+    },
+    fruit: {
+      id: "fruit", name: "水果摊", seriesName: "水果", tier: "fruit", emoji: "🍓",
+      levelNames: ["水果摊", "水果店", "连锁果店", "品牌果商"],
+      flavor: "买了个 {item}，付款 {amount} 快乐币。",
+      items: ["草莓", "芒果", "西瓜", "葡萄", "水蜜桃"]
+    },
+    lodging: {
+      id: "lodging", name: "青年旅社", seriesName: "住宿", tier: "lodging", emoji: "🏡",
+      levelNames: ["青年旅社", "特色民宿", "连锁酒店", "私家庄园"],
+      flavor: "与朋友住宿 1 次，付款 {amount} 快乐币。"
+    },
+    cinema: {
+      id: "cinema", name: "马戏团", seriesName: "影院", tier: "cinema", emoji: "🎬",
+      levelNames: ["马戏团", "露天影院", "连锁影院", "影视王国"],
+      flavor: "看了场电影，付款 {amount} 快乐币。"
+    },
+    mall: {
+      id: "mall", name: "挑货郎", seriesName: "商场", tier: "mall", emoji: "🛍️",
+      levelNames: ["挑货郎", "解忧货铺", "连锁超市", "超级商场"],
+      flavor: "买了 {item}，付款 {amount} 快乐币。",
+      items: ["发卡", "香薰", "帆布包", "手机壳", "小摆件"]
+    }
   };
 
   var lifeEvents = {
-    trafficLight: { id: "trafficLight", name: "闯红灯", text: "着急赶路，被开了一张罚单。", effect: "fine", amount: 200 },
-    compliment: { id: "compliment", name: "被夸好看", text: "心情一好，请大家喝了点东西。", effect: "randomFine", amounts: [100, 200, 300, 400, 500] },
-    failedInvestment: { id: "failedInvestment", name: "投资失败", text: "一次不太成功的理财尝试。", effect: "percentFine", rate: 0.3 },
-    lottery: { id: "lottery", name: "彩票中奖", text: "好运刚好落到你的口袋里。", effect: "lottery" },
-    novel: { id: "novel", name: "通宵看小说", text: "结局很好看，黑眼圈也很真实。", effect: "fine", amount: 200 },
-    carried: { id: "carried", name: "被带飞", text: "靠谱队友把这一局稳稳接住。", effect: "gain", amount: 500 },
-    shopping: { id: "shopping", name: "逛街买买买", text: "快乐是真的，账单也是真的。", effect: "fine", amount: 500 },
-    milkTeaGift: { id: "milkTeaGift", name: "收到奶茶", text: "甜度刚好，今天也刚好。", effect: "gain", amount: 100 }
+    trafficLight: { id: "trafficLight", name: "闯红灯了", text: "过马路闯红灯了，被罚款 200 快乐币。", effect: "fine", amount: 200 },
+    compliment: { id: "compliment", name: "被夸好看", text: "被一个小朋友夸好看，脸红的时候被他偷走 {amount} 快乐币。", effect: "randomFine", amounts: [100, 200, 300, 400, 500] },
+    flowers: { id: "flowers", name: "收到鲜花", text: "路边卖鲜花的老板送了你一束鲜花，很开心，+300 快乐币。", effect: "gain", amount: 300 },
+    failedInvestment: { id: "failedInvestment", name: "投资被骗", text: "被朋友忽悠一起投资，项目失败，损失 30% 快乐币。", effect: "percentFine", rate: 0.3 },
+    lottery: { id: "lottery", name: "彩票中奖", text: "买彩票中奖了，增加 {amount} 快乐币。", effect: "lottery" },
+    novel: { id: "novel", name: "通宵看书", text: "通宵看小说没睡觉，精神状态下降，减少 200 快乐币。", effect: "fine", amount: 200 },
+    carried: { id: "carried", name: "王者连胜", text: "搭子喊你上线打王者，被带飞了，+500 快乐币。", effect: "gain", amount: 500 },
+    shopping: { id: "shopping", name: "闺闺血拼", text: "闺闺约你出门逛街买买买，扣除当前现金的 10%。", effect: "percentFine", rate: 0.1 },
+    lateGame: { id: "lateGame", name: "熬夜游戏", text: "熬夜单排体力下降，暂停一会。", effect: "skip", turns: 1 },
+    milkTeaGift: { id: "milkTeaGift", name: "奶茶请客", text: "暗恋的人给你点奶茶，很开心，快乐币增加 100。", effect: "gain", amount: 100 }
   };
 
   var gameMoments = {
@@ -115,24 +145,21 @@
         "任选身边一件物品，为它设计一句宣传语。"
       ]
     },
-    diceDuel: { id: "diceDuel", name: "比骰子", prompts: [] },
+    diceDuel: { id: "diceDuel", name: "掷骰子", prompts: [] },
     rps: { id: "rps", name: "石头剪刀布", prompts: [] }
   };
 
   var cards = {
     fullHealth: { id: "fullHealth", name: "满血卡", category: "positive", timing: "skipReaction", effect: "cancelSkip", text: "解除一次跳过行动状态。" },
     lazy: { id: "lazy", name: "摆烂卡", category: "negative", timing: "draw", effect: "skipSelf", text: "抽到后立即跳过下一次行动。" },
-    punish: { id: "punish", name: "惩罚卡", category: "negative", timing: "turn", effect: "skipTarget", text: "选择一名其他玩家，使其跳过下一次行动。" },
-    progress: { id: "progress", name: "进步卡", category: "positive", timing: "beforeRoll", effect: "moveThree", text: "本回合直接前进 3 格，不再掷主骰。" },
-    luck: { id: "luck", name: "好运卡", category: "positive", timing: "beforeRoll", effect: "extraRoll", text: "第一次移动后再掷一次骰。" },
+    punish: { id: "punish", name: "惩罚卡", category: "negative", timing: "draw", effect: "skipTarget", text: "抽到后立即选择一名其他玩家，使其暂停下一次行动。" },
+    luck: { id: "luck", name: "好运卡", category: "positive", timing: "draw", effect: "extraRoll", text: "周末睡到自然醒，精力充沛，可多一次掷骰子机会。" },
     immunity: { id: "immunity", name: "免惩卡", category: "positive", timing: "reaction", effect: "cancelPenalty", text: "抵消一次系统罚款、跳过行动或游戏失败惩罚。" },
-    consume: { id: "consume", name: "消费卡", category: "positive", timing: "turn", effect: "shieldConsumption", text: "免除下一次他人经营地产消费。" },
-    bully: { id: "bully", name: "霸王卡", category: "positive", timing: "turn", effect: "redirectConsumption", text: "下一次消费由现金最高的其他玩家代付。" },
-    lottery: { id: "lottery", name: "彩票卡", category: "positive", timing: "turn", effect: "lottery", text: "获得 1,000、2,000 或 3,000 快乐币。" },
-    investment: { id: "investment", name: "投资卡", category: "positive", timing: "turn", effect: "investment", text: "一半机会 +2,000，一半机会 -1,000。", maxDrawsPerPlayer: 1 },
-    salary: { id: "salary", name: "加薪卡", category: "positive", timing: "turn", effect: "doubleStart", text: "下次经过起点时，起点奖励翻倍。" },
-    generous: { id: "generous", name: "好人卡", category: "negative", timing: "turn", effect: "giveAll", text: "给每名其他未破产玩家 200 快乐币。" },
-    charming: { id: "charming", name: "迷人卡", category: "positive", timing: "turn", effect: "takeAll", text: "每名其他未破产玩家向你支付 200 快乐币。" },
+    consume: { id: "consume", name: "消费卡", category: "positive", timing: "automatic", effect: "shieldConsumption", text: "抵消下一次真正触发的他人地产消费。" },
+    lottery: { id: "lottery", name: "彩票卡", category: "positive", timing: "draw", effect: "lottery", text: "立即刮奖，获得 1,000、2,000 或 3,000 快乐币。" },
+    investment: { id: "investment", name: "投资卡", category: "positive", timing: "draw", effect: "investment", text: "立即揭晓：一半机会 +2,000，一半机会 -1,000。", maxDrawsPerPlayer: 1 },
+    generous: { id: "generous", name: "好人卡", category: "negative", timing: "draw", effect: "giveAll", text: "立即给每名其他未破产玩家 200 快乐币。" },
+    charming: { id: "charming", name: "迷人卡", category: "positive", timing: "draw", effect: "takeAll", text: "立即由每名其他未破产玩家向你支付 200 快乐币。" },
     reflect: { id: "reflect", name: "反弹卡", category: "positive", timing: "reaction", effect: "reflectPenalty", text: "把一次系统罚款或游戏失败惩罚反弹给指定玩家。" }
   };
 
@@ -140,15 +167,15 @@
     { id: "tile-0", index: 0, type: "start", name: "温暖小窝", emoji: "🏠" },
     { id: "tile-1", index: 1, type: "property", propertyId: "milkTea", name: properties.milkTea.name, emoji: properties.milkTea.emoji },
     { id: "tile-2", index: 2, type: "life", lifeEventId: "trafficLight", name: lifeEvents.trafficLight.name, emoji: "🚦" },
-    { id: "tile-3", index: 3, type: "safe", name: "休息时间", emoji: "🌿" },
+    { id: "tile-3", index: 3, type: "life", lifeEventId: "flowers", name: lifeEvents.flowers.name, emoji: "💐" },
     { id: "tile-4", index: 4, type: "property", propertyId: "bookstore", name: properties.bookstore.name, emoji: properties.bookstore.emoji },
-    { id: "tile-5", index: 5, type: "gameMoment", gameMomentIds: ["truth", "dare"], name: "真心话或大冒险", emoji: "🎭" },
+    { id: "tile-5", index: 5, type: "gameMoment", gameMomentIds: ["truth", "dare", "diceDuel", "rps"], name: "游戏互动", emoji: "🎭" },
     { id: "tile-6", index: 6, type: "life", lifeEventId: "compliment", name: lifeEvents.compliment.name, emoji: "✨" },
     { id: "tile-7", index: 7, type: "property", propertyId: "snack", name: properties.snack.name, emoji: properties.snack.emoji },
     { id: "tile-8", index: 8, type: "idle", name: "发呆时刻", emoji: "☁️" },
     { id: "tile-9", index: 9, type: "bank", name: "世界银行", emoji: "🏦" },
     { id: "tile-10", index: 10, type: "property", propertyId: "wellness", name: properties.wellness.name, emoji: properties.wellness.emoji },
-    { id: "tile-11", index: 11, type: "delivery", name: "外卖配送", emoji: "🛵" },
+    { id: "tile-11", index: 11, type: "delivery", name: "去送外卖", emoji: "🛵" },
     { id: "tile-12", index: 12, type: "property", propertyId: "dessert", name: properties.dessert.name, emoji: properties.dessert.emoji },
     { id: "tile-13", index: 13, type: "cityInspection", name: "城管检查", emoji: "📋" },
     { id: "tile-14", index: 14, type: "life", lifeEventId: "failedInvestment", name: lifeEvents.failedInvestment.name, emoji: "📉" },
@@ -157,9 +184,9 @@
     { id: "tile-17", index: 17, type: "adventure", name: "冒险时间", emoji: "🧭" },
     { id: "tile-18", index: 18, type: "life", lifeEventId: "lottery", name: lifeEvents.lottery.name, emoji: "🎟️" },
     { id: "tile-19", index: 19, type: "property", propertyId: "fruit", name: properties.fruit.name, emoji: properties.fruit.emoji },
-    { id: "tile-20", index: 20, type: "gameMoment", gameMomentIds: ["diceDuel", "rps"], name: "掷骰子或猜拳", emoji: "🎲" },
+    { id: "tile-20", index: 20, type: "gameMoment", gameMomentIds: ["truth", "dare", "diceDuel", "rps"], name: "游戏互动", emoji: "🎲" },
     { id: "tile-21", index: 21, type: "life", lifeEventId: "novel", name: lifeEvents.novel.name, emoji: "📖" },
-    { id: "tile-22", index: 22, type: "bank", name: "世界银行", emoji: "🏦" },
+    { id: "tile-22", index: 22, type: "life", lifeEventId: "lateGame", name: lifeEvents.lateGame.name, emoji: "🌙" },
     { id: "tile-23", index: 23, type: "property", propertyId: "lodging", name: properties.lodging.name, emoji: properties.lodging.emoji },
     { id: "tile-24", index: 24, type: "life", lifeEventId: "carried", name: lifeEvents.carried.name, emoji: "🏆" },
     { id: "tile-25", index: 25, type: "fate", name: "命运时刻", emoji: "🔮" },
@@ -172,13 +199,13 @@
   ];
 
   var mobileTileLabels = [
-    "温暖小窝", "奶茶小铺", "红灯罚单", "休息时间", "治愈书店",
-    "真心冒险", "被夸好看", "快乐小摊", "发呆时刻", "世界银行",
-    "养生小馆", "外卖配送", "甜品小屋", "城管检查", "投资失败",
-    "休息时间", "宠物乐园", "冒险时间", "彩票中奖", "鲜果小铺",
-    "骰子猜拳", "通宵追书", "世界银行", "云朵民宿", "队友带飞",
-    "命运时刻", "星光影院", "逛街买买", "梦想商场", "游戏连跪",
-    "伊敏测评", "收到奶茶"
+    "温暖小窝", "推车奶茶", "闯红灯了", "收到鲜花", "街角书摊",
+    "游戏互动", "被夸好看", "夜市小摊", "发呆时刻", "世界银行",
+    "按摩店", "去送外卖", "手作甜品", "城管检查", "投资被骗",
+    "休息时间", "流浪猫窝", "冒险时间", "彩票中奖", "水果摊",
+    "游戏互动", "通宵看书", "熬夜游戏", "青年旅社", "王者连胜",
+    "命运时刻", "马戏团", "闺闺血拼", "挑货郎", "游戏连跪",
+    "伊敏测评", "奶茶请客"
   ];
 
   board.forEach(function (tile) {
@@ -192,7 +219,7 @@
     safe: { name: "休息时间", color: "#76b7d9" },
     idle: { name: "发呆时刻", color: "#c8cad0" },
     bank: { name: "世界银行", color: "#477a67" },
-    delivery: { name: "外卖配送", color: "#f29a57" },
+    delivery: { name: "去送外卖", color: "#f29a57" },
     adventure: { name: "冒险时间", color: "#d26b52" },
     fate: { name: "命运时刻", color: "#8d71c4" },
     gameMoment: { name: "游戏时刻", color: "#e47ba3" },
@@ -317,7 +344,7 @@
   };
 
   root.GAME_DATA = {
-    version: 2,
+    version: 3,
     config: {
       mode: "companion",
       boardSize: board.length,
@@ -325,21 +352,22 @@
       initialMoney: 2000,
       handLimit: 5,
       actionChainCap: 8,
-      insolvencyGraceActions: 240,
-      insolvencyPressureStep: 200,
       startReward: 500,
       safeMoneyReward: 300,
-      collisionFee: 100,
-      collisionBackSteps: 2,
+      collisionBaseFee: 200,
+      collisionBackSteps: 3,
       bankInterestRate: 0.05,
       bankInterestCap: 2000,
       propertySaleRate: 0.7,
       forcedConsumptionLayers: 3,
       taskRefusalRate: 0.1,
-      taskRefusalMin: 100,
-      taskRefusalMax: 1000,
-      rescueProtectionTurns: 3,
-      rescueIncomeMultiplier: 0.7,
+      terminalPressureStartRound: 41,
+      terminalPressureBands: [
+        { minRound: 41, maxRound: 60, base: 50, step: 15 },
+        { minRound: 61, maxRound: 80, base: 350, step: 20 },
+        { minRound: 81, maxRound: null, base: 750, step: 25 }
+      ],
+      terminalPressureMultipliers: { 4: 1, 3: 0.45, 2: 0.13 },
       logLimit: 160
     },
     board: board,
@@ -353,8 +381,7 @@
       positive: Object.keys(cards).filter(function (id) { return cards[id].category === "positive"; }),
       negative: Object.keys(cards).filter(function (id) { return cards[id].category === "negative"; }),
       positiveWeight: 0.6,
-      negativeWeight: 0.4,
-      negativeCardWeights: { lazy: 0.5, generous: 0.4, punish: 0.1 }
+      negativeWeight: 0.4
     },
     lottery: [
       { amount: 1000, weight: 0.6 },
